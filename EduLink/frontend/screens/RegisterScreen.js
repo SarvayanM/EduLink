@@ -1,3 +1,4 @@
+import Screen from "../components/Screen";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
@@ -29,7 +30,7 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { auth, db } from "../services/firebaseAuth";
+import { auth, db, getSecondaryAuth } from "../services/firebaseAuth";
 import {
   createUserWithEmailAndPassword,
   updateProfile,
@@ -258,17 +259,21 @@ export default function RegisterScreen({ route, navigation }) {
   // Validation helpers
   async function validateStudent(email, password) {
     try {
-      const q = query(
+      // 1) Make sure there’s a student doc
+      const qRef = query(
         collection(db, "users"),
         where("email", "==", email.trim()),
         where("role", "==", "student")
       );
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.empty) return false;
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      await signOut(auth);
+      const snap = await getDocs(qRef);
+      if (snap.empty) return false;
+
+      // 2) Verify creds WITHOUT touching the main app auth state
+      const secondaryAuth = getSecondaryAuth();
+      await signInWithEmailAndPassword(secondaryAuth, email.trim(), password);
+      await signOut(secondaryAuth); // clean up
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -1123,10 +1128,10 @@ export default function RegisterScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
   root: {
     flex: 1,
     // Solid brand background (gradient removed)
-    backgroundColor: "transparent",
   },
 
   kav: { flex: 1 },
@@ -1143,7 +1148,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#EAF8FF22",
+
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -1163,7 +1168,7 @@ const styles = StyleSheet.create({
   // Card “glass” container
   card: {
     borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
     elevation: 12,
@@ -1217,7 +1222,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 60,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 3,
@@ -1259,7 +1264,7 @@ const styles = StyleSheet.create({
   // Inputs
   input: {
     marginBottom: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+
     borderRadius: 16,
     height: 56,
   },
@@ -1305,11 +1310,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.3)",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   radioCardSelected: {
     borderColor: C.white,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   radioText: {
     fontSize: 14,
@@ -1340,7 +1343,7 @@ const styles = StyleSheet.create({
   searchBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
   searchInput: {
     height: 46,
-    backgroundColor: "#FFFFFF",
+
     marginBottom: 8,
     borderRadius: 12,
   },

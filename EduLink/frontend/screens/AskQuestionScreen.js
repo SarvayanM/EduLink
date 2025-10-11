@@ -1,10 +1,11 @@
 // frontend/screens/AskQuestionScreen.js
+import Screen from "../components/Screen";
+import Toast from "react-native-toast-message";
 import React, { useState } from "react";
 import {
   View,
   Text,
   Pressable,
-  Alert,
   ScrollView,
   StyleSheet,
   Platform,
@@ -17,6 +18,8 @@ import {
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
+import { BlurView } from "expo-blur";
+import { NAVBAR_HEIGHT } from "../components/TopNavbar";
 
 const SUBJECTS = ["Math", "Science", "English", "History", "Geography"];
 const CLASSROOMS = [
@@ -28,7 +31,34 @@ const CLASSROOMS = [
   "Grade 11",
 ];
 
+const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+    {children}
+  </BlurView>
+);
+
+const PAGE_TOP_OFFSET = 24;
+function useToast() {
+  const insets = useSafeAreaInsets();
+  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
+
+  return React.useCallback(
+    (type, text1, text2) => {
+      Toast.show({
+        type, // "success" | "error" | "info"
+        text1,
+        text2,
+        position: "top",
+        topOffset,
+        visibilityTime: 2600,
+      });
+    },
+    [topOffset]
+  );
+}
+
 export default function AskQuestionScreen({ navigation }) {
+  const showToast = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [subject, setSubject] = useState("Math");
@@ -36,9 +66,41 @@ export default function AskQuestionScreen({ navigation }) {
   const [classroom, setClassroom] = useState("Grade 10");
   const [busy, setBusy] = useState(false);
 
+  /* ---------- Minimal, useful validations (no logic change) ---------- */
+  const isValidTitle = (t) => t.trim().length >= 8 && t.trim().length <= 180;
+  const isValidDesc = (d) => d.trim().length <= 800;
+  const isValidTopic = (t) => t.trim().length <= 60;
+  const isValidSubject = (s) => SUBJECTS.includes(s);
+  const isValidClassroom = (c) => CLASSROOMS.includes(c);
+
   async function submitQuestion() {
-    if (!title.trim()) {
-      Alert.alert("Missing title", "Please enter a question title");
+    // Field checks (non-invasive, keep flow the same)
+    if (!isValidTitle(title)) {
+      showToast(
+        "error",
+        "Missing or short title",
+        "Use at least 8 characters (up to 180)."
+      );
+      return;
+    }
+    if (!isValidDesc(description)) {
+      showToast("error", "Description too long", "Max 800 characters.");
+      return;
+    }
+    if (!isValidTopic(topic)) {
+      showToast("error", "Topic too long", "Keep it under 60 characters.");
+      return;
+    }
+    if (!isValidSubject(subject)) {
+      showToast("error", "Invalid subject", "Pick a subject from the list.");
+      return;
+    }
+    if (!isValidClassroom(classroom)) {
+      showToast(
+        "error",
+        "Invalid classroom",
+        "Pick a classroom from the list."
+      );
       return;
     }
 
@@ -59,13 +121,13 @@ export default function AskQuestionScreen({ navigation }) {
       });
 
       if (response.ok) {
-        Alert.alert("Success", "Question posted successfully!");
+        showToast("success", "Success", "Question posted successfully!");
         navigation.goBack();
       } else {
-        Alert.alert("Error", "Failed to post question");
+        showToast("error", "Error", "Failed to post question");
       }
     } catch {
-      Alert.alert("Error", "Network error");
+      showToast("error", "Network error", "Please check your connection.");
     } finally {
       setBusy(false);
     }
@@ -75,19 +137,21 @@ export default function AskQuestionScreen({ navigation }) {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.screenContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
     >
       {/* Header card */}
-      <View style={[styles.card, styles.headerCard]}>
+      <BlurCard style={[styles.chatBubble]}>
         <Text style={styles.title}>Ask a Question</Text>
         <Text style={styles.subtitle}>
           Be clear and specific for faster help.
         </Text>
+        {/* Subtle decorative halo with requested overlay color */}
         <View style={styles.halo} />
-      </View>
+      </BlurCard>
 
       {/* Form card */}
-      {/* Form card */}
-      <View style={[styles.card, styles.formCard]}>
+      <BlurCard style={[styles.chatBubble]}>
         {/* Title */}
         <TextInput
           mode="outlined"
@@ -141,12 +205,11 @@ export default function AskQuestionScreen({ navigation }) {
           }}
         />
         <View style={styles.helperRow}>
-          <Text style={styles.helperText}>
-            Add formulas, steps you tried.
-          </Text>
+          <Text style={styles.helperText}>Add formulas, steps you tried.</Text>
           <Text style={styles.counterText}>{description.length}/800</Text>
         </View>
 
+        {/* Subject */}
         <Text style={styles.label}>Subject</Text>
         <View style={styles.chipsRow}>
           {SUBJECTS.map((s) => {
@@ -160,6 +223,10 @@ export default function AskQuestionScreen({ navigation }) {
                   color: "rgba(0,0,0,0.06)",
                   borderless: false,
                 }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`Subject ${s}`}
               >
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
@@ -171,6 +238,7 @@ export default function AskQuestionScreen({ navigation }) {
           })}
         </View>
 
+        {/* Topic */}
         <Text style={styles.label}>Topic (Optional)</Text>
         <TextInput
           mode="outlined"
@@ -180,6 +248,8 @@ export default function AskQuestionScreen({ navigation }) {
           style={styles.paperInput}
           outlineStyle={styles.outlineStyle}
           contentStyle={styles.contentStyle}
+          selectionColor={EDU_COLORS.secondary}
+          cursorColor={EDU_COLORS.primary}
           theme={{
             colors: {
               primary: EDU_COLORS.primary,
@@ -188,6 +258,7 @@ export default function AskQuestionScreen({ navigation }) {
           }}
         />
 
+        {/* Classroom */}
         <Text style={styles.label}>Classroom</Text>
         <View style={styles.chipsRow}>
           {CLASSROOMS.map((c) => {
@@ -201,6 +272,10 @@ export default function AskQuestionScreen({ navigation }) {
                   color: "rgba(0,0,0,0.06)",
                   borderless: false,
                 }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`Classroom ${c}`}
               >
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
@@ -212,6 +287,7 @@ export default function AskQuestionScreen({ navigation }) {
           })}
         </View>
 
+        {/* Submit */}
         <Button
           mode="contained"
           onPress={submitQuestion}
@@ -227,47 +303,35 @@ export default function AskQuestionScreen({ navigation }) {
         >
           {busy ? "Posting..." : "Post Question"}
         </Button>
-      </View>
+      </BlurCard>
+
+      {/* Local Toast host (ensures messages render on this screen) */}
+      <Toast position="top" topOffset={24} visibilityTime={2600} />
     </ScrollView>
   );
 }
 
 /* ===================== Styles (Design-token aligned) ===================== */
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
   screen: {
     flex: 1,
-    backgroundColor: "transparent", // global gradient from App.js
-  },
-  screenContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 120,
-    paddingTop: 12,
+    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
   },
 
-  /* Reusable glassy card */
-  card: {
-    backgroundColor: Surfaces.solid,
+  /* Shared blur shell */
+  blurCard: {
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: Surfaces.border,
-    marginBottom: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
-  },
-
-  /* Header */
-  headerCard: {
-    paddingVertical: 22,
-    paddingHorizontal: 18,
     overflow: "hidden",
-    position: "relative",
+    backgroundColor: "transparent",
+  },
+  chatBubble: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   title: {
     fontSize: 22,
@@ -280,20 +344,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: "700",
   },
-  halo: {
-    position: "absolute",
-    right: -40,
-    top: -40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "rgba(255,255,255,0.14)",
-  },
 
   /* Form */
-  formCard: {
-    padding: 16,
-  },
   label: {
     fontSize: 13,
     fontWeight: "800",
@@ -302,15 +354,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  /* Paper TextInputs */
+  /* Paper inputs */
   paperInput: {
     backgroundColor: Surfaces.inputBg,
     borderRadius: 14,
     marginBottom: 12,
   },
-  paperTextarea: {
-    minHeight: 120,
-  },
+  paperTextarea: { minHeight: 130 },
   outlineStyle: {
     borderColor: Surfaces.border,
     borderRadius: 14,
@@ -318,6 +368,7 @@ const styles = StyleSheet.create({
   contentStyle: {
     color: EDU_COLORS.textPrimary,
     fontSize: 16,
+    textAlignVertical: "top",
   },
 
   /* Chips */
@@ -339,7 +390,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipActive: {
-    backgroundColor: Buttons.accentBg, // 10% pop
+    backgroundColor: Buttons.accentBg,
     borderColor: Buttons.accentBg,
   },
   chipText: {
@@ -356,7 +407,7 @@ const styles = StyleSheet.create({
   cta: {
     marginTop: 18,
     borderRadius: 14,
-    paddingVertical: 6, // Paper adds its own vertical padding; keep subtle
+    paddingVertical: 6,
     ...Platform.select({
       ios: {
         shadowColor: EDU_COLORS.shadow,
@@ -367,13 +418,8 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
-  ctaDisabled: {
-    opacity: 0.7,
-  },
-  ctaText: {
-    fontWeight: "900",
-    letterSpacing: 0.2,
-  },
+  ctaDisabled: { opacity: 0.7 },
+  ctaText: { fontWeight: "900", letterSpacing: 0.2 },
   helperRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -390,14 +436,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: EDU_COLORS.gray500,
     fontWeight: "700",
-  },
-  paperTextarea: {
-    minHeight: 130,
-  },
-  contentStyle: {
-    color: EDU_COLORS.textPrimary,
-    fontSize: 16,
-    // ensures top-left alignment for multiline placeholders and text
-    textAlignVertical: "top",
   },
 });

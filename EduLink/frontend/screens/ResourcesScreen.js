@@ -1,3 +1,4 @@
+import Toast from "react-native-toast-message";
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -5,15 +6,19 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  Alert,
   Modal,
   Image,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   Ionicons,
   MaterialCommunityIcons,
@@ -38,7 +43,38 @@ import {
   PALETTE_60_30_10,
 } from "../theme/colors";
 
+import { BlurView } from "expo-blur";
+import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+
+const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+    {children}
+  </BlurView>
+);
+
+const PAGE_TOP_OFFSET = 24;
+
+function useToast() {
+  const insets = useSafeAreaInsets();
+  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
+
+  return React.useCallback(
+    (type, text1, text2) => {
+      Toast.show({
+        type, // "success" | "error" | "info"
+        text1,
+        text2,
+        position: "top",
+        topOffset,
+        visibilityTime: 2600,
+      });
+    },
+    [topOffset]
+  );
+}
+
 export default function ResourcesScreen() {
+  const showToast = useToast();
   const [resources, setResources] = useState([]);
   const [userGrade, setUserGrade] = useState(null);
   const [userRole, setUserRole] = useState(null);
@@ -95,9 +131,7 @@ export default function ResourcesScreen() {
         setUserRole(data.role);
         setUserGrade(data.grade);
       }
-    } catch (e) {
-      console.error("User fetch error:", e);
-    }
+    } catch (e) {}
   };
 
   const fetchDownloads = async () => {
@@ -128,15 +162,11 @@ export default function ResourcesScreen() {
               downloadedAt: item.downloadedAt,
             });
           }
-        } catch (err) {
-          console.error("Download resource fetch error:", err);
-        }
+        } catch (err) {}
       }
       out.sort((a, b) => (b.downloadedAt || 0) - (a.downloadedAt || 0));
       setDownloadedFiles(out);
-    } catch (e) {
-      console.error("Downloads fetch error:", e);
-    }
+    } catch (e) {}
   };
 
   const fetchResources = async () => {
@@ -150,7 +180,7 @@ export default function ResourcesScreen() {
         createdAt: d.data().createdAt?.toDate?.(),
       }));
 
-      // Filter by role/grade
+      // Filter by role/grade (unchanged logic)
       if (userRole === "tutor" && userGrade) {
         const allowed = Array.from(
           { length: parseInt(userGrade, 10) - 5 },
@@ -165,7 +195,6 @@ export default function ResourcesScreen() {
       data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setResources(data);
     } catch (e) {
-      console.error("Resources fetch error:", e);
     } finally {
       setLoading(false);
     }
@@ -187,23 +216,25 @@ export default function ResourcesScreen() {
         });
       }
     } catch (e) {
-      console.error("Pick file error:", e);
-      Alert.alert("Error", "Failed to pick file");
+      showToast("error", "Error", "Failed to pick file");
     }
   };
 
   const uploadResource = async () => {
     if (!uploadData.title.trim() || !selectedFile) {
-      Alert.alert("Error", "Please fill all fields and select a file");
+      showToast("error", "Error", "Please fill all fields and select a file");
       return;
     }
     setUploading(true);
     try {
       const user = auth.currentUser;
-      if (!user) return Alert.alert("Error", "User not authenticated");
+      if (!user) return showToast("error", "Error", "User not authenticated");
 
       const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (!userDoc.exists()) return Alert.alert("Error", "User data not found");
+      if (!userDoc.exists()) {
+        showToast("error", "Error", "User data not found");
+        return;
+      }
 
       const u = userDoc.data();
       const userName =
@@ -231,7 +262,7 @@ export default function ResourcesScreen() {
       };
 
       await addDoc(collection(db, "resources"), payload);
-      Alert.alert("Success", "Resource shared successfully!");
+      showToast("success", "Success", "Resource shared successfully!");
       setShowUploadModal(false);
       setUploadData({
         title: "",
@@ -242,8 +273,7 @@ export default function ResourcesScreen() {
       setSelectedFile(null);
       fetchResources();
     } catch (e) {
-      console.error("Upload error:", e);
-      Alert.alert("Error", "Failed to share resource");
+      showToast("error", "Error", "Failed to share resource");
     } finally {
       setUploading(false);
     }
@@ -269,13 +299,14 @@ export default function ResourcesScreen() {
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(resource.fileUri);
         } else {
-          Alert.alert("PDF", `${resource.title}\n${resource.fileName}`);
+          showToast("info", "PDF", `${resource.title}\n${resource.fileName}`);
         }
       } catch {
-        Alert.alert("Error", "Cannot open PDF");
+        showToast("error", "Error", "Cannot open PDF");
       }
     } else {
-      Alert.alert(
+      showToast(
+        "info",
         resource.title,
         `Subject: ${resource.subject}\nGrade: ${resource.grade}\nUploaded by: ${resource.uploadedByName}`
       );
@@ -304,10 +335,12 @@ export default function ResourcesScreen() {
         downloadedAt: new Date(),
       });
 
-      Alert.alert("Downloaded", `${resource.fileName} saved successfully!`);
+      showToast(
+        "success",
+        "Downloaded"`${resource.fileName} saved successfully!`
+      );
     } catch (e) {
-      console.error("Download error:", e);
-      Alert.alert("Download Failed", "Could not download the file");
+      showToast("error", "Download Failed", "Could not download the file");
     }
   };
 
@@ -315,38 +348,42 @@ export default function ResourcesScreen() {
   return (
     <View style={styles.screen}>
       {/* Header */}
-      <View style={[styles.card, styles.headerCard]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Resources</Text>
-          <Text style={styles.subtitle}>
-            {userRole === "teacher"
-              ? "All Grades"
-              : userRole === "tutor"
-              ? `Grade ${userGrade} & Below`
-              : userGrade
-              ? `Grade ${userGrade}`
-              : "All Grades"}
-          </Text>
-        </View>
+      <BlurCard style={[styles.chatBubble]}>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Resources</Text>
+            <Text style={styles.subtitle}>
+              {userRole === "teacher"
+                ? "All Grades"
+                : userRole === "tutor"
+                ? `Grade ${userGrade} & Below`
+                : userGrade
+                ? `Grade ${userGrade}`
+                : "All Grades"}
+            </Text>
+          </View>
 
-        <View style={styles.headerActions}>
-          <Pressable
-            style={[styles.pillBtn, styles.successBtn]}
-            onPress={() => setShowDownloadsModal(true)}
-          >
-            <Ionicons name="folder-open" size={18} color="#fff" />
-            <Text style={styles.pillBtnText}>{downloadedFiles.length}</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={[styles.pillBtn, styles.successBtn]}
+              onPress={() => setShowDownloadsModal(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="folder-open" size={18} color="#fff" />
+              <Text style={styles.pillBtnText}>{downloadedFiles.length}</Text>
+            </Pressable>
 
-          <Pressable
-            style={[styles.pillBtn, styles.primaryBtn]}
-            onPress={() => setShowUploadModal(true)}
-          >
-            <Ionicons name="share-outline" size={16} color="#fff" />
-            <Text style={styles.pillBtnText}>Share</Text>
-          </Pressable>
+            <Pressable
+              style={[styles.pillBtn, styles.primaryBtn]}
+              onPress={() => setShowUploadModal(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="share-outline" size={16} color="#fff" />
+              <Text style={styles.pillBtnText}>Share</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </BlurCard>
 
       {/* Search */}
       <View style={[styles.card, styles.searchCard]}>
@@ -366,11 +403,12 @@ export default function ResourcesScreen() {
       </View>
 
       {/* Filters */}
-      <View style={[styles.card, styles.filterCard]}>
+      <BlurCard style={styles.chatBubble}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsRow}
+          keyboardShouldPersistTaps="handled"
         >
           <Text style={styles.filterLabel}>Subject:</Text>
           {["All", ...subjects].map((s) => {
@@ -380,6 +418,7 @@ export default function ResourcesScreen() {
                 key={s}
                 style={[styles.chip, active && styles.chipActive]}
                 onPress={() => setSelectedSubjectFilter(s)}
+                hitSlop={8}
               >
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
@@ -390,12 +429,15 @@ export default function ResourcesScreen() {
             );
           })}
         </ScrollView>
+      </BlurCard>
 
-        {(userRole === "teacher" || userRole === "tutor") && (
+      {(userRole === "teacher" || userRole === "tutor") && (
+        <BlurCard style={styles.chatBubble}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipsRow}
+            keyboardShouldPersistTaps="handled"
           >
             <Text style={styles.filterLabel}>Grade:</Text>
             {(() => {
@@ -414,6 +456,7 @@ export default function ResourcesScreen() {
                     key={g}
                     style={[styles.chip, active && styles.chipActive]}
                     onPress={() => setSelectedGradeFilter(g)}
+                    hitSlop={8}
                   >
                     <Text
                       style={[styles.chipText, active && styles.chipTextActive]}
@@ -425,21 +468,33 @@ export default function ResourcesScreen() {
               });
             })()}
           </ScrollView>
-        )}
-      </View>
+        </BlurCard>
+      )}
 
       {/* Content */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {loading ? (
-          <View style={styles.loadingBox}>
-            <Text style={styles.loadingText}>Loading Resources ...</Text>
-          </View>
+          <SafeAreaView style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+            <Text
+              style={{
+                fontSize: 20,
+                color: "white",
+                fontWeight: "600",
+                textAlign: "center",
+              }}
+            >
+              Loading Resources ...
+            </Text>
+          </SafeAreaView>
         ) : filtered.length ? (
           filtered.map((r) => (
-            <View key={r.id} style={styles.resourceCard}>
+            <BlurCard key={r.id} style={styles.chatBubble}>
               <View style={styles.resourceHeader}>
                 <View
                   style={[
@@ -504,6 +559,7 @@ export default function ResourcesScreen() {
                   <Pressable
                     style={[styles.smallBtn, styles.primaryBtn]}
                     onPress={() => viewResource(r)}
+                    hitSlop={6}
                   >
                     <Ionicons name="eye-outline" size={16} color="#fff" />
                     <Text style={styles.smallBtnText}>View</Text>
@@ -511,13 +567,14 @@ export default function ResourcesScreen() {
                   <Pressable
                     style={[styles.smallBtn, styles.successBtn]}
                     onPress={() => downloadResource(r)}
+                    hitSlop={6}
                   >
                     <Ionicons name="download-outline" size={16} color="#fff" />
                     <Text style={styles.smallBtnText}>Download</Text>
                   </Pressable>
                 </View>
               </View>
-            </View>
+            </BlurCard>
           ))
         ) : (
           <View style={styles.emptyBox}>
@@ -544,7 +601,7 @@ export default function ResourcesScreen() {
         visible={showUploadModal}
         animationType="slide"
         transparent
-        statusBarTranslucent // <= Android: let the modal extend under status bar
+        statusBarTranslucent
         presentationStyle="overFullScreen"
         onRequestClose={() => setShowUploadModal(false)}
       >
@@ -563,6 +620,7 @@ export default function ResourcesScreen() {
             <ScrollView
               style={styles.modalBody}
               keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
               <Text style={styles.inputLabel}>Resource Title</Text>
               <TextInput
@@ -591,6 +649,7 @@ export default function ResourcesScreen() {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chipsRow}
+                keyboardShouldPersistTaps="handled"
               >
                 {subjects.map((s) => {
                   const active = uploadData.subject === s;
@@ -601,6 +660,7 @@ export default function ResourcesScreen() {
                       onPress={() =>
                         setUploadData((p) => ({ ...p, subject: s }))
                       }
+                      hitSlop={8}
                     >
                       <Text
                         style={[
@@ -622,6 +682,7 @@ export default function ResourcesScreen() {
                     horizontal
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.chipsRow}
+                    keyboardShouldPersistTaps="handled"
                   >
                     {grades.map((g) => {
                       const active = uploadData.grade === g;
@@ -632,6 +693,7 @@ export default function ResourcesScreen() {
                           onPress={() =>
                             setUploadData((p) => ({ ...p, grade: g }))
                           }
+                          hitSlop={8}
                         >
                           <Text
                             style={[
@@ -715,7 +777,7 @@ export default function ResourcesScreen() {
         visible={showDownloadsModal}
         animationType="slide"
         transparent
-        statusBarTranslucent // <= Android: let the modal extend under status bar
+        statusBarTranslucent
         presentationStyle="overFullScreen"
         onRequestClose={() => setShowDownloadsModal(false)}
       >
@@ -731,7 +793,10 @@ export default function ResourcesScreen() {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}
+            >
               {downloadedFiles.length ? (
                 downloadedFiles.map((f, idx) => (
                   <View key={idx} style={styles.downloadCard}>
@@ -767,9 +832,13 @@ export default function ResourcesScreen() {
                             if (await Sharing.isAvailableAsync())
                               await Sharing.shareAsync(f.fileUri);
                             else
-                              Alert.alert("PDF", `${f.title}\n${f.fileName}`);
+                              showToast(
+                                "info",
+                                "PDF",
+                                `${resource.title}\n${resource.fileName}`
+                              );
                           } catch {
-                            Alert.alert("Error", "Cannot open PDF file");
+                            showToast("error", "Error", "Cannot open PDF");
                           }
                         }
                       }}
@@ -806,7 +875,7 @@ export default function ResourcesScreen() {
         visible={showImageModal}
         animationType="fade"
         transparent
-        statusBarTranslucent // <= Android: let the modal extend under status bar
+        statusBarTranslucent
         presentationStyle="overFullScreen"
         onRequestClose={() => setShowImageModal(false)}
       >
@@ -819,16 +888,18 @@ export default function ResourcesScreen() {
                   try {
                     await Sharing.shareAsync(selectedImage.fileUri);
                   } catch {
-                    Alert.alert("Error", "Failed to share image");
+                    showToast("error", "Error", "Failed to share image");
                   }
                 }
               }}
+              hitSlop={8}
             >
               <Ionicons name="share-outline" size={22} color="#fff" />
             </Pressable>
             <Pressable
               style={styles.imageIconBtn}
               onPress={() => setShowImageModal(false)}
+              hitSlop={8}
             >
               <Ionicons name="close" size={24} color="#fff" />
             </Pressable>
@@ -862,50 +933,33 @@ export default function ResourcesScreen() {
 
 /* ================= styles ================= */
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
   screen: {
     flex: 1,
-    backgroundColor: "transparent", // let global gradient show
+    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
   },
 
-  /* Cards */
-  card: {
-    backgroundColor: Surfaces.solid,
+  /* Shared Blur card shell */
+  blurCard: {
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: Surfaces.border,
-    marginHorizontal: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
+    overflow: "hidden",
+    backgroundColor: "transparent",
   },
-  headerCard: {
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+
+  /* Header */
+  chatBubble: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  searchCard: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  filterCard: {
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-
-  /* Header */
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -934,6 +988,38 @@ const styles = StyleSheet.create({
   successBtn: { backgroundColor: Buttons.successBg },
   pillBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 
+  /* Generic solid cards */
+  card: {
+    backgroundColor: Surfaces.solid,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Surfaces.border,
+    marginHorizontal: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: EDU_COLORS.shadow,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.12,
+        shadowRadius: 14,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  searchCard: {
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  filterCard: {
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+  },
+
   /* Search */
   searchInput: {
     flex: 1,
@@ -943,48 +1029,44 @@ const styles = StyleSheet.create({
   },
 
   /* Chips */
-  chipsRow: {
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    gap: 8,
-  },
   filterLabel: {
     alignSelf: "center",
     fontSize: 13,
     fontWeight: "700",
     color: EDU_COLORS.gray600,
     marginRight: 4,
+    marginTop: 8,
+  },
+  chipsRow: {
+    paddingHorizontal: 4,
+    gap: 8,
+    alignItems: "center",
+    minHeight: 44,
   },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 16,
-    backgroundColor: Buttons.chipBg,
+    paddingVertical: 10,
+    borderRadius: 18,
   },
-  chipActive: { backgroundColor: Buttons.chipActiveBg },
-  chipText: { fontSize: 13, color: Buttons.chipText, fontWeight: "700" },
-  chipTextActive: { color: Buttons.chipActiveText },
+  chipActive: {
+    backgroundColor: Buttons.accentBg,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  chipTextActive: {
+    color: Buttons.accentText,
+  },
 
   /* Content */
   content: { flex: 1, marginTop: 12 },
   contentContainer: { paddingHorizontal: 16, paddingBottom: 120 },
 
   resourceCard: {
-    backgroundColor: Surfaces.solid,
-    borderRadius: 16,
     padding: 14,
     marginBottom: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-      },
-      android: { elevation: 3 },
-    }),
   },
   resourceHeader: {
     flexDirection: "row",
@@ -1000,8 +1082,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 10,
   },
-  fileIconPdf: { backgroundColor: "#FEF2F2" },
-  fileIconImg: { backgroundColor: "#F0FDF4" },
+  fileIconPdf: {},
+  fileIconImg: {},
 
   fileName: {
     fontSize: 15,
@@ -1023,14 +1105,12 @@ const styles = StyleSheet.create({
 
   tagsCol: { alignItems: "flex-end", gap: 6 },
   subjectTag: {
-    backgroundColor: "#EFF6FF",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   subjectText: { fontSize: 12, color: "#2563EB", fontWeight: "700" },
   gradeTag: {
-    backgroundColor: "#F0FDF4",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1066,7 +1146,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   loadingText: {
-    fontSize: 20, // Increased font size
+    fontSize: 20,
     color: "white",
     fontWeight: "600",
     textAlign: "center",
@@ -1117,7 +1197,7 @@ const styles = StyleSheet.create({
   /* Modal base */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
@@ -1176,7 +1256,6 @@ const styles = StyleSheet.create({
     borderColor: EDU_COLORS.gray300,
     borderRadius: 12,
     padding: 14,
-    backgroundColor: "#fff",
     color: EDU_COLORS.textPrimary,
     fontSize: 15,
     marginBottom: 14,
@@ -1184,7 +1263,6 @@ const styles = StyleSheet.create({
   textArea: { height: 100, textAlignVertical: "top" },
 
   infoBanner: {
-    backgroundColor: "#F0F9FF",
     borderLeftWidth: 4,
     borderLeftColor: "#0EA5E9",
     borderRadius: 12,
@@ -1267,12 +1345,11 @@ const styles = StyleSheet.create({
   /* Image modal */
   imageOverlay: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 23, 0.55)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
   },
-
   imageTop: {
     position: "absolute",
     top: 50,
@@ -1284,14 +1361,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
   imageWrap: { width: "90%", height: "80%", alignItems: "center" },
   modalImage: { width: "100%", height: "100%", flex: 1, borderRadius: 8 },
   imageInfo: {
-    backgroundColor: "rgba(0,0,0,0.7)",
     marginTop: 14,
     width: "100%",
     borderRadius: 8,

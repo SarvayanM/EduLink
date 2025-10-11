@@ -1,7 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, Pressable, Modal, Alert, PanResponder, Animated } from 'react-native';
-import { auth, db } from '../services/firebaseAuth';
-import { collection, query, where, getDocs, orderBy, updateDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
+import Screen from "../components/Screen";
+import Toast from "react-native-toast-message";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Pressable,
+  Modal,
+  PanResponder,
+  Animated,
+} from "react-native";
+import { auth, db } from "../services/firebaseAuth";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  updateDoc,
+  doc,
+  deleteDoc,
+  getDoc,
+} from "firebase/firestore";
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
@@ -20,10 +41,9 @@ export default function NotificationsScreen({ navigation }) {
           y: pan.y._value,
         });
       },
-      onPanResponderMove: Animated.event(
-        [null, { dx: pan.x, dy: pan.y }],
-        { useNativeDriver: false }
-      ),
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
       onPanResponderRelease: () => {
         pan.flattenOffset();
       },
@@ -44,40 +64,40 @@ export default function NotificationsScreen({ navigation }) {
       }
 
       const q = query(
-        collection(db, 'notifications'),
-        where('userId', '==', user.uid)
+        collection(db, "notifications"),
+        where("userId", "==", user.uid)
       );
-      
+
       const querySnapshot = await getDocs(q);
-      const notificationsData = querySnapshot.docs.map(doc => ({
+      const notificationsData = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         time: formatTime(doc.data().createdAt?.toDate()),
-        icon: getNotificationIcon(doc.data().type)
+        icon: getNotificationIcon(doc.data().type),
       }));
-      
+
       notificationsData.sort((a, b) => {
         const dateA = a.createdAt?.toDate() || new Date(0);
         const dateB = b.createdAt?.toDate() || new Date(0);
         return dateB - dateA;
       });
-      
+
       setNotifications(notificationsData);
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error("Error fetching notifications:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const formatTime = (date) => {
-    if (!date) return 'Recent';
+    if (!date) return "Recent";
     const now = new Date();
     const diff = now - date;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
-    
+
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
@@ -85,28 +105,35 @@ export default function NotificationsScreen({ navigation }) {
 
   const getNotificationIcon = (type) => {
     switch (type) {
-      case 'answer': return '💬';
-      case 'upvote': return '👍';
-      case 'resource': return '📚';
-      case 'achievement': return '🏅';
-      default: return '🔔';
+      case "answer":
+        return "💬";
+      case "upvote":
+        return "👍";
+      case "resource":
+        return "📚";
+      case "achievement":
+        return "🏅";
+      default:
+        return "🔔";
     }
   };
 
   const deleteNotification = async (notificationId) => {
     try {
-      await deleteDoc(doc(db, 'notifications', notificationId));
+      await deleteDoc(doc(db, "notifications", notificationId));
       fetchNotifications();
     } catch (error) {
-      console.error('Error deleting notification:', error);
-      Alert.alert('Error', 'Failed to delete notification');
+      console.error("Error deleting notification:", error);
+      Toast.show("Error", "Failed to delete notification");
     }
   };
 
   const handleNotificationClick = async (notification) => {
     try {
       if (notification.questionId) {
-        const questionDoc = await getDoc(doc(db, 'questions', notification.questionId));
+        const questionDoc = await getDoc(
+          doc(db, "questions", notification.questionId)
+        );
         if (questionDoc.exists()) {
           setQuestionDetails({ id: questionDoc.id, ...questionDoc.data() });
           setSelectedNotification(notification);
@@ -114,12 +141,12 @@ export default function NotificationsScreen({ navigation }) {
         }
       }
     } catch (error) {
-      console.error('Error fetching question details:', error);
-      Alert.alert('Error', 'Failed to load question details');
+      console.error("Error fetching question details:", error);
+      Toast.show("Error", "Failed to load question details");
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <View style={styles.container}>
@@ -132,45 +159,45 @@ export default function NotificationsScreen({ navigation }) {
           <>
             {notifications.map((notification) => (
               <Pressable
-            key={notification.id}
-            style={[
-              styles.notificationItem,
-              !notification.read && styles.unreadItem
-            ]}
-            onPress={() => handleNotificationClick(notification)}
-          >
-            <View style={styles.notificationIcon}>
-              <Text style={styles.iconText}>{notification.icon}</Text>
-            </View>
-            
-            <View style={styles.notificationContent}>
-              <Text style={[
-                styles.notificationTitle,
-                !notification.read && styles.unreadTitle
-              ]}>
-                {notification.title}
-              </Text>
-              <Text style={styles.notificationMessage}>
-                {notification.message}
-              </Text>
-              <Text style={styles.notificationTime}>
-                {notification.time}
-              </Text>
-            </View>
+                key={notification.id}
+                style={[
+                  styles.notificationItem,
+                  !notification.read && styles.unreadItem,
+                ]}
+                onPress={() => handleNotificationClick(notification)}
+              >
+                <View style={styles.notificationIcon}>
+                  <Text style={styles.iconText}>{notification.icon}</Text>
+                </View>
 
-            <Pressable 
-              style={styles.deleteButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                deleteNotification(notification.id);
-              }}
-            >
-              <Text style={styles.deleteText}>×</Text>
-            </Pressable>
+                <View style={styles.notificationContent}>
+                  <Text
+                    style={[
+                      styles.notificationTitle,
+                      !notification.read && styles.unreadTitle,
+                    ]}
+                  >
+                    {notification.title}
+                  </Text>
+                  <Text style={styles.notificationMessage}>
+                    {notification.message}
+                  </Text>
+                  <Text style={styles.notificationTime}>
+                    {notification.time}
+                  </Text>
+                </View>
 
-            {!notification.read && (
-              <View style={styles.unreadDot} />
-            )}
+                <Pressable
+                  style={styles.deleteButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    deleteNotification(notification.id);
+                  }}
+                >
+                  <Text style={styles.deleteText}>×</Text>
+                </Pressable>
+
+                {!notification.read && <View style={styles.unreadDot} />}
               </Pressable>
             ))}
 
@@ -197,36 +224,48 @@ export default function NotificationsScreen({ navigation }) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Question & Answer</Text>
-              <Pressable 
+              <Pressable
                 style={styles.closeButton}
                 onPress={() => setShowDetailModal(false)}
               >
                 <Text style={styles.closeButtonText}>×</Text>
               </Pressable>
             </View>
-            
+
             <ScrollView style={styles.modalBody}>
               {questionDetails && (
                 <>
                   <View style={styles.questionSection}>
                     <Text style={styles.sectionLabel}>Question:</Text>
-                    <Text style={styles.questionText}>{questionDetails.question}</Text>
+                    <Text style={styles.questionText}>
+                      {questionDetails.question}
+                    </Text>
                     {questionDetails.subject && (
-                      <Text style={styles.subjectText}>📚 {questionDetails.subject}</Text>
+                      <Text style={styles.subjectText}>
+                        📚 {questionDetails.subject}
+                      </Text>
                     )}
                   </View>
-                  
-                  {questionDetails.answers && questionDetails.answers.length > 0 && (
-                    <View style={styles.answersSection}>
-                      <Text style={styles.sectionLabel}>Answers:</Text>
-                      {questionDetails.answers.map((answer, index) => (
-                        <View key={index} style={styles.answerCard}>
-                          <Text style={styles.answerText}>{answer.answer}</Text>
-                          <Text style={styles.answerMeta}>By {answer.answeredByName} • {answer.createdAt?.toDate?.()?.toLocaleDateString() || 'Recent'}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
+
+                  {questionDetails.answers &&
+                    questionDetails.answers.length > 0 && (
+                      <View style={styles.answersSection}>
+                        <Text style={styles.sectionLabel}>Answers:</Text>
+                        {questionDetails.answers.map((answer, index) => (
+                          <View key={index} style={styles.answerCard}>
+                            <Text style={styles.answerText}>
+                              {answer.answer}
+                            </Text>
+                            <Text style={styles.answerMeta}>
+                              By {answer.answeredByName} •{" "}
+                              {answer.createdAt
+                                ?.toDate?.()
+                                ?.toLocaleDateString() || "Recent"}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                 </>
               )}
             </ScrollView>
@@ -252,35 +291,36 @@ export default function NotificationsScreen({ navigation }) {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    paddingTop: 60,
+    paddingHorizontal: 16,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
     marginRight: 12,
   },
   countFab: {
-    position: 'absolute',
+    position: "absolute",
     top: 30,
     left: 20,
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
+
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -288,30 +328,28 @@ const styles = {
     zIndex: 999,
   },
   countFabText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   content: {
     flex: 1,
   },
   notificationItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: "#F3F4F6",
   },
-  unreadItem: {
-    backgroundColor: '#F0F9FF',
-  },
+  unreadItem: {},
   notificationIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
   iconText: {
@@ -325,55 +363,55 @@ const styles = {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 8,
   },
   deleteText: {
-    color: 'white',
+    color: "white",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   loadingState: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 60,
   },
   loadingText: {
     fontSize: 16,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: "#6B7280",
+    fontWeight: "500",
   },
   notificationTitle: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
+    fontWeight: "500",
+    color: "#111827",
     marginBottom: 4,
   },
   unreadTitle: {
-    fontWeight: '600',
+    fontWeight: "600",
   },
   notificationMessage: {
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
     marginBottom: 4,
     lineHeight: 20,
   },
   notificationTime: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2563EB',
+
     marginTop: 8,
   },
   emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 80,
     paddingHorizontal: 40,
   },
@@ -383,59 +421,58 @@ const styles = {
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: "600",
+    color: "#6B7280",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
+    color: "#9CA3AF",
+    textAlign: "center",
     lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalContent: {
-    backgroundColor: 'white',
     borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    shadowColor: '#000',
+    width: "90%",
+    maxHeight: "80%",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+    alignItems: "center",
+    justifyContent: "center",
   },
   closeButtonText: {
     fontSize: 20,
-    color: '#6B7280',
-    fontWeight: '600',
+    color: "#6B7280",
+    fontWeight: "600",
   },
   modalBody: {
     padding: 20,
@@ -445,40 +482,39 @@ const styles = {
   },
   sectionLabel: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: "600",
+    color: "#374151",
     marginBottom: 8,
   },
   questionText: {
     fontSize: 16,
-    color: '#111827',
+    color: "#111827",
     marginBottom: 8,
     lineHeight: 22,
   },
   subjectText: {
     fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: "#6B7280",
+    fontWeight: "500",
   },
   answersSection: {
     marginTop: 16,
   },
   answerCard: {
-    backgroundColor: '#F9FAFB',
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#059669',
+    borderLeftColor: "#059669",
   },
   answerText: {
     fontSize: 15,
-    color: '#111827',
+    color: "#111827",
     marginBottom: 6,
     lineHeight: 20,
   },
   answerMeta: {
     fontSize: 12,
-    color: '#6B7280',
+    color: "#6B7280",
   },
-};
+});

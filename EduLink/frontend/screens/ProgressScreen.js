@@ -1,16 +1,24 @@
 // frontend/screens/ProgressScreen.js
-import React, { useState, useEffect } from "react";
+import Screen from "../components/Screen";
+import Toast from "react-native-toast-message";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   ScrollView,
-  Alert,
   Image,
   Modal,
   Pressable,
   StyleSheet,
   Platform,
+  Animated,
+  Easing,
+  ActivityIndicator,
 } from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { auth, db } from "../services/firebaseAuth";
 import {
   doc,
@@ -28,6 +36,17 @@ import {
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
+
+import { BlurView } from "expo-blur";
+
+/* ---------- Small UI helpers (blur card) ---------- */
+const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+    {children}
+  </BlurView>
+);
+
+const PAGE_TOP_OFFSET = 24;
 
 export default function ProgressScreen() {
   const [userStats, setUserStats] = useState({
@@ -50,10 +69,67 @@ export default function ProgressScreen() {
 
   const POINTS_PER_LEVEL = 200;
 
+  /* ---------- Animations ---------- */
+  const mountFade = useRef(new Animated.Value(0)).current;
+  const pointsScale = useRef(new Animated.Value(0.85)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const lbAnimVals = useRef([]).current; // one per leaderboard row
+
   useEffect(() => {
     fetchUserData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      // Page fade-in
+      Animated.timing(mountFade, {
+        toValue: 1,
+        duration: 360,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+
+      // Points circle subtle pop
+      Animated.spring(pointsScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 90,
+        useNativeDriver: true,
+      }).start();
+
+      // Progress fill tween (width %)
+      const pct =
+        userStats.currentLevelProgress > 0
+          ? userStats.currentLevelProgress / POINTS_PER_LEVEL
+          : 0;
+      progressAnim.setValue(0);
+      Animated.timing(progressAnim, {
+        toValue: pct,
+        duration: 650,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+
+      // Leaderboard rows stagger
+      lbAnimVals.length = leaderboard.length;
+      for (let i = 0; i < leaderboard.length; i++) {
+        lbAnimVals[i] = lbAnimVals[i] || new Animated.Value(0);
+      }
+      Animated.stagger(
+        70,
+        lbAnimVals.map((v) =>
+          Animated.timing(v, {
+            toValue: 1,
+            duration: 350,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          })
+        )
+      ).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, userStats.currentLevelProgress, leaderboard.length]);
 
   const fetchUserData = async () => {
     try {
@@ -149,31 +225,28 @@ export default function ProgressScreen() {
   const promoteToPeerTutor = async (userId, userName) => {
     try {
       await updateDoc(doc(db, "users", userId), { role: "tutor" });
-      Alert.alert(
-        "Congratulations! 🎉",
-        `${
+      Toast.show({
+        type: "success",
+        text1: "Congratulations! 🎉",
+        text2: `${
           userName || "You"
         } have been promoted to Peer Tutor for reaching 200 points!`,
-        [{ text: "Awesome!", style: "default" }]
-      );
+      });
     } catch (e) {
       console.error("Error promoting to peer tutor:", e);
     }
   };
 
-  const progressToNext = userStats.currentLevelProgress / POINTS_PER_LEVEL;
+  const progressToNext =
+    userStats.currentLevelProgress / (POINTS_PER_LEVEL || 1);
 
   if (loading) {
     return (
-      <View
-        style={[
-          styles.screen,
-          { justifyContent: "center", alignItems: "center" },
-        ]}
-      >
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
         <Text
           style={{
-            fontSize: 20, // Increased font size
+            fontSize: 20,
             color: "white",
             fontWeight: "600",
             textAlign: "center",
@@ -181,29 +254,35 @@ export default function ProgressScreen() {
         >
           Loading Your Progress…
         </Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
+    <Animated.ScrollView
+      style={[styles.screen, { opacity: mountFade }]}
       contentContainerStyle={{ paddingBottom: 120 }}
+      showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <View style={[styles.card, styles.headerCard]}>
+      <BlurCard style={[styles.chatBubble]}>
         <Text style={styles.headerTitle}>Progress & Leaderboard</Text>
         <View style={styles.headerHalo} />
-      </View>
+      </BlurCard>
 
       {/* Points + Level Progress */}
-      <View style={[styles.card, styles.statsRow]}>
-        <View style={styles.pointsCol}>
-          <View style={styles.pointsCircle}>
+      <BlurCard style={[styles.chatBubble]}>
+        <View style={styles.pointsRow}>
+          <Animated.View
+            style={[
+              styles.pointsCircle,
+              { transform: [{ scale: pointsScale }] },
+            ]}
+          >
             <Text style={styles.pointsNumber}>{userStats.points}</Text>
             <Text style={styles.pointsLabel}>Points</Text>
-          </View>
-          <Text style={styles.rankText}>Rank #{userStats.rank}</Text>
+          </Animated.View>
+          <Text style={styles.rankText}>Rank {userStats.rank}</Text>
         </View>
 
         <View style={styles.progressCol}>
@@ -211,11 +290,17 @@ export default function ProgressScreen() {
           <Text style={styles.progressLabel}>
             Progress to Level {userStats.level + 1}
           </Text>
+
           <View style={styles.progressBar}>
-            <View
+            <Animated.View
               style={[
                 styles.progressFill,
-                { width: `${progressToNext * 100}%` },
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0%", "100%"],
+                  }),
+                },
               ]}
             />
           </View>
@@ -244,10 +329,10 @@ export default function ProgressScreen() {
             </View>
           )}
         </View>
-      </View>
+      </BlurCard>
 
       {/* Activity */}
-      <View style={[styles.card, { padding: 18 }]}>
+      <BlurCard style={[styles.chatBubble]}>
         <Text style={styles.cardTitle}>My Activity</Text>
         <View style={styles.activityGrid}>
           <View style={styles.activityItem}>
@@ -267,10 +352,10 @@ export default function ProgressScreen() {
             <Text style={styles.activityLabel}>Answers Given</Text>
           </View>
         </View>
-      </View>
+      </BlurCard>
 
       {/* Badges */}
-      <View style={[styles.card, { padding: 18 }]}>
+      <BlurCard style={[styles.chatBubble]}>
         <Text style={styles.cardTitle}>Achievements</Text>
         <View style={styles.badgesGrid}>
           {userStats.badges.length === 0 ? (
@@ -286,56 +371,78 @@ export default function ProgressScreen() {
             ))
           )}
         </View>
-      </View>
+      </BlurCard>
 
       {/* Leaderboard */}
-      <View style={[styles.card, { padding: 18, marginBottom: 28 }]}>
+      <BlurCard style={[styles.chatBubble]}>
         <Text style={styles.cardTitle}>Class Leaderboard</Text>
         {leaderboard.length === 0 ? (
           <Text style={styles.emptyLeaderboard}>
             No leaderboard data available
           </Text>
         ) : (
-          leaderboard.map((u) => (
-            <View
-              key={u.userId}
-              style={[styles.lbRow, u.isCurrentUser && styles.lbRowMe]}
-            >
-              <View style={styles.lbLeft}>
-                <Text style={styles.lbRank}>
-                  {u.rank}
-                  {u.badge}
-                </Text>
-                {u.profileImage ? (
-                  <Pressable
-                    onPress={() => {
-                      setSelectedImage({ uri: u.profileImage, name: u.name });
-                      setShowImageModal(true);
-                    }}
-                  >
-                    <Image
-                      source={{ uri: u.profileImage }}
-                      style={styles.avatar}
-                    />
-                  </Pressable>
-                ) : (
-                  <View style={styles.avatarFallback}>
-                    <Text style={styles.avatarFallbackText}>
-                      {(u.name || "A").charAt(0).toUpperCase()}
+          leaderboard.map((u, idx) => {
+            const rowAnim = lbAnimVals[idx] || new Animated.Value(1);
+            return (
+              <Animated.View
+                key={u.userId}
+                style={{
+                  transform: [
+                    {
+                      translateY: rowAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [10, 0],
+                      }),
+                    },
+                  ],
+                  opacity: rowAnim,
+                }}
+              >
+                <View style={[styles.lbRow, u.isCurrentUser && styles.lbRowMe]}>
+                  <View style={styles.lbLeft}>
+                    <Text style={styles.lbRank}>
+                      {u.rank}
+                      {u.badge}
+                    </Text>
+                    {u.profileImage ? (
+                      <Pressable
+                        onPress={() => {
+                          setSelectedImage({
+                            uri: u.profileImage,
+                            name: u.name,
+                          });
+                          setShowImageModal(true);
+                        }}
+                      >
+                        <Image
+                          source={{ uri: u.profileImage }}
+                          style={styles.avatar}
+                        />
+                      </Pressable>
+                    ) : (
+                      <View style={styles.avatarFallback}>
+                        <Text style={styles.avatarFallbackText}>
+                          {(u.name || "A").charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text
+                      style={[
+                        styles.lbName,
+                        u.isCurrentUser && styles.lbNameMe,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {u.isCurrentUser ? "You" : u.name}
                     </Text>
                   </View>
-                )}
-                <Text
-                  style={[styles.lbName, u.isCurrentUser && styles.lbNameMe]}
-                >
-                  {u.isCurrentUser ? "You" : u.name}
-                </Text>
-              </View>
-              <Text style={styles.lbPoints}>{u.points} pts</Text>
-            </View>
-          ))
+                  <Text style={styles.lbPoints}>{u.points} pts</Text>
+                </View>
+              </Animated.View>
+            );
+          })
         )}
-      </View>
+      </BlurCard>
 
       {/* Image Modal */}
       <Modal
@@ -363,44 +470,34 @@ export default function ProgressScreen() {
           )}
         </View>
       </Modal>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
 /* ===================== Styles (tokens-first) ===================== */
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+
   screen: {
     flex: 1,
-    backgroundColor: "transparent", // show global gradient
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
   },
 
-  /* Generic card base */
-  card: {
-    backgroundColor: Surfaces.solid,
+  /* Shared blur card base */
+  blurCard: {
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: Surfaces.border,
-    marginBottom: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
+    overflow: "hidden",
+    backgroundColor: "transparent",
   },
 
   /* Header */
-  headerCard: {
-    paddingVertical: 22,
-    paddingHorizontal: 18,
-    overflow: "hidden",
-    position: "relative",
-    alignItems: "center",
+  chatBubble: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   headerTitle: {
     fontSize: 20,
@@ -412,19 +509,17 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: "rgba(255,255,255,0.14)",
     top: -40,
     right: -40,
   },
 
-  /* Stats row */
-  statsRow: {
-    padding: 16,
+  /* Points + progress */
+  pointsRow: {
     flexDirection: "row",
-    gap: 16,
-    alignItems: "stretch",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
   },
-  pointsCol: { width: 140, alignItems: "center", justifyContent: "center" },
   pointsCircle: {
     width: 104,
     height: 104,
@@ -434,7 +529,6 @@ const styles = StyleSheet.create({
     borderColor: PALETTE_60_30_10.accent10,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
   },
   pointsNumber: {
     fontSize: 28,
@@ -442,9 +536,15 @@ const styles = StyleSheet.create({
     color: PALETTE_60_30_10.accent10,
   },
   pointsLabel: { fontSize: 12, color: EDU_COLORS.gray600, fontWeight: "800" },
-  rankText: { fontSize: 13, fontWeight: "900", color: EDU_COLORS.success },
+  rankText: {
+    fontSize: 16,
+    fontWeight: "900",
+    backgroundColor: EDU_COLORS.success,
+    color: "#FFFF",
+    padding: 4,
+  },
 
-  progressCol: { flex: 1, justifyContent: "center" },
+  progressCol: { marginTop: 12 },
   levelText: {
     fontSize: 16,
     fontWeight: "900",
@@ -487,7 +587,7 @@ const styles = StyleSheet.create({
   },
   badgePillText: { color: "#fff", fontSize: 12, fontWeight: "900" },
 
-  /* Cards: Activity & Achievements */
+  /* Section titles */
   cardTitle: {
     fontSize: 16,
     fontWeight: "900",
@@ -495,6 +595,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  /* Activity */
   activityGrid: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -526,12 +627,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  /* Badges */
   badgesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   badgeChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#FEF3C7",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
@@ -566,7 +667,6 @@ const styles = StyleSheet.create({
     borderTopColor: Surfaces.border,
   },
   lbRowMe: {
-    backgroundColor: "#EFF6FF",
     marginHorizontal: -18,
     paddingHorizontal: 18,
     borderRadius: 10,
@@ -610,10 +710,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
 
-  /* Image Modal */
+  /* Image Modal (overlay requested) */
   imageModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.9)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
     justifyContent: "center",
     alignItems: "center",
   },
@@ -621,7 +721,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 54,
     right: 20,
-    backgroundColor: "rgba(255,255,255,0.25)",
     borderRadius: 20,
     width: 40,
     height: 40,

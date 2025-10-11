@@ -5,10 +5,10 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
-  Pressable,
   StatusBar,
   Platform,
 } from "react-native";
+
 import {
   NavigationContainer,
   useNavigationContainerRef,
@@ -18,7 +18,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Provider as PaperProvider } from "react-native-paper";
-import { paperTheme, EDU_COLORS } from "./theme/colors";
+import { paperTheme, EDU_COLORS, APP_GRADIENT } from "./theme/colors";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./services/firebaseAuth";
@@ -29,6 +29,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+import TopNavbar, { NAVBAR_HEIGHT } from "./components/TopNavbar";
 
 /* Screens */
 import HomeScreen from "./screens/HomeScreen";
@@ -47,48 +48,21 @@ import StudyPlannerScreen from "./screens/StudyPlannerScreen";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-/* ---------- Gradient palette ---------- */
-const C = {
-  primary: EDU_COLORS.primary,
-  secondary: EDU_COLORS.secondary,
-  base: EDU_COLORS.base,
-};
+/* ---------- Global Toast host (clears fixed navbar) ---------- */
+function ToastHost() {
+  const insets = useSafeAreaInsets();
+  return <Toast topOffset={insets.top + NAVBAR_HEIGHT + 8} />;
+}
 
 /* ---------- Shared options ---------- */
 const stackCommon = {
   headerShown: false,
-  contentStyle: { backgroundColor: "transparent" }, // let the global gradient show through
-};
-
-/** Floating, friendly, high-contrast tab bar */
-const floatingTabBar = {
-  position: "absolute",
-  left: 16,
-  right: 16,
-  bottom: 16,
-  height: 64,
-  borderRadius: 20,
-  backgroundColor: "rgba(255,255,255,0.95)",
-  borderTopWidth: 0,
-  paddingHorizontal: 6,
-  ...Platform.select({
-    ios: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.16,
-      shadowRadius: 22,
-    },
-    android: { elevation: 10 },
-  }),
+  contentStyle: { backgroundColor: "transparent" },
 };
 
 const tabsCommon = {
   headerShown: false,
-  tabBarActiveTintColor: "#0F766E",
-  tabBarInactiveTintColor: "#6B7280",
-  tabBarStyle: floatingTabBar,
-  tabBarLabelStyle: { fontSize: 11, fontWeight: "700", marginBottom: 6 },
-  tabBarItemStyle: { paddingTop: 6 },
+  tabBarStyle: { display: "none" },
   sceneContainerStyle: { backgroundColor: "transparent" },
 };
 
@@ -96,31 +70,12 @@ const tabsCommon = {
 function StudentTabs() {
   return (
     <Tab.Navigator screenOptions={tabsCommon}>
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏫</Text> }}
-      />
-      <Tab.Screen
-        name="Q&A"
-        component={QuestionFeedScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>❓</Text> }}
-      />
-      <Tab.Screen
-        name="Resources"
-        component={ResourcesScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>📚</Text> }}
-      />
-      <Tab.Screen
-        name="StudyPlanner"
-        component={StudyPlannerScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>📅</Text> }}
-      />
-      <Tab.Screen
-        name="Progress"
-        component={ProgressScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>📊</Text> }}
-      />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Q&A" component={QuestionFeedScreen} />
+      <Tab.Screen name="Resources" component={ResourcesScreen} />
+      <Tab.Screen name="StudyPlanner" component={StudyPlannerScreen} />
+      <Tab.Screen name="Progress" component={ProgressScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -129,21 +84,10 @@ const TutorTabs = StudentTabs;
 function TeacherTabs() {
   return (
     <Tab.Navigator screenOptions={tabsCommon}>
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏫</Text> }}
-      />
-      <Tab.Screen
-        name="Q&A"
-        component={QuestionFeedScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>❓</Text> }}
-      />
-      <Tab.Screen
-        name="Resources"
-        component={ResourcesScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>📚</Text> }}
-      />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Q&A" component={QuestionFeedScreen} />
+      <Tab.Screen name="Resources" component={ResourcesScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -151,11 +95,7 @@ function TeacherTabs() {
 function ParentTabs() {
   return (
     <Tab.Navigator screenOptions={tabsCommon}>
-      <Tab.Screen
-        name="Dashboard"
-        component={ParentDashboard}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text> }}
-      />
+      <Tab.Screen name="Dashboard" component={ParentDashboard} />
       <Tab.Screen
         name="Notifications"
         children={() => (
@@ -167,13 +107,8 @@ function ParentTabs() {
             </Text>
           </View>
         )}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>🔔</Text> }}
       />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 20 }}>👤</Text> }}
-      />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -218,10 +153,8 @@ const FRIENDLY_TITLES = {
 
 function buildBreadcrumbsFromState(state, parents = []) {
   if (!state || !state.routes) return [];
-
   const results = [];
   const isStack = state.type === "stack";
-
   const lastIndex = state.index ?? state.routes.length - 1;
   const slice = isStack
     ? state.routes.slice(0, lastIndex + 1)
@@ -246,37 +179,30 @@ function buildBreadcrumbsFromState(state, parents = []) {
       );
     }
   }
-
   return results;
 }
-
-const defaultTabForRole = (role) => {
-  switch (role) {
-    case "parent":
-      return "Dashboard";
-    case "teacher":
-    case "tutor":
-    case "student":
-    default:
-      return "Home";
-  }
-};
 
 /* ================= Root wrapper with SafeAreaProvider ================= */
 export default function App() {
   return (
     <SafeAreaProvider>
       <PaperProvider theme={paperTheme}>
-        <StatusBar translucent barStyle="light-content" />
-        {/* One global gradient for the entire app */}
+        {/* Keep strong contrast for status icons via dark top gradient */}
+        <StatusBar
+          translucent
+          barStyle="light-content"
+          backgroundColor="transparent"
+        />
+        {/* Global gradient background (dark→brand→light) */}
         <LinearGradient
-          colors={[C.primary, C.secondary, C.base]}
-          start={{ x: 0.1, y: 0.0 }}
-          end={{ x: 0.95, y: 1.0 }}
+          colors={APP_GRADIENT}
+          start={{ x: 0.0, y: 0.0 }}
+          end={{ x: 1.0, y: 1.0 }}
           style={StyleSheet.absoluteFill}
         />
         <RootApp />
       </PaperProvider>
+      <ToastHost />
     </SafeAreaProvider>
   );
 }
@@ -289,7 +215,6 @@ function RootApp() {
   const navigationRef = useNavigationContainerRef();
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [topRouteName, setTopRouteName] = useState("");
-  const insets = useSafeAreaInsets();
 
   // Transparent navigation theme so the global gradient shows everywhere
   const NAV_THEME = {
@@ -343,7 +268,7 @@ function RootApp() {
             setRole("student");
           }
         } catch (e) {
-          console.warn("Failed to read role:", e);
+          
           setRole("student");
         } finally {
           setLoadingRole(false);
@@ -363,20 +288,12 @@ function RootApp() {
         name="Login"
         component={LoginScreen}
         initialParams={{ msg: null }}
-        options={{
-          // Prevent auto back affordance & gestures on Login
-          headerBackVisible: false,
-          gestureEnabled: false,
-        }}
+        options={{ headerBackVisible: false, gestureEnabled: false }}
       />
       <Stack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{
-          // Keep default gestures for Register (can go back to Login if needed)
-          headerBackVisible: true,
-          gestureEnabled: true,
-        }}
+        options={{ headerBackVisible: true, gestureEnabled: true }}
       />
       <Stack.Screen name="ParentDashboard" component={ParentDashboard} />
     </Stack.Navigator>
@@ -399,26 +316,39 @@ function RootApp() {
 
   return (
     <SafeAreaView style={styles.safeWrap} edges={["top", "left", "right"]}>
-      {/* small spacer below system status area */}
-      <View style={{ height: Math.max(insets.top * 0.25, 8) }} />
+      {/* Fixed top navbar */}
+      <TopNavbar role={role || "student"} navigationRef={navigationRef} />
 
-      {/* Breadcrumbs (hidden on Login/Register and when unauthenticated) */}
+      {/* Spacer exactly equal to navbar */}
+      <View style={{ height: NAVBAR_HEIGHT }} />
+
+      {/* Breadcrumbs under the app name */}
       {user && topRouteName !== "Login" && topRouteName !== "Register" && (
         <View style={styles.breadcrumbsWrap}>
-          <View style={styles.breadcrumbsPill}>
+          <Text
+            style={styles.breadcrumbLine}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="Breadcrumbs"
+          >
             {breadcrumbs.map((crumb, idx) => (
-              <Pressable
-                key={`${crumb.name}-${idx}`}
-                onPress={() => onCrumbPress(idx)}
-                hitSlop={8}
-              >
-                <Text style={styles.breadcrumbText}>
+              <Text key={`${crumb.name}-${idx}`}>
+                <Text
+                  onPress={() => onCrumbPress(idx)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Go to ${crumb.label}`}
+                  style={styles.breadcrumbLink}
+                >
                   {crumb.label}
-                  {idx < breadcrumbs.length - 1 ? " / " : ""}
                 </Text>
-              </Pressable>
+                {idx < breadcrumbs.length - 1 && (
+                  <Text style={styles.breadcrumbSep}> / </Text>
+                )}
+              </Text>
             ))}
-          </View>
+          </Text>
         </View>
       )}
 
@@ -430,25 +360,10 @@ function RootApp() {
       >
         {user ? (
           loadingRole ? (
-            <View
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "transparent",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 20,
-                  color: "white",
-                  fontWeight: "600",
-                  textAlign: "center",
-                }}
-              >
-                Loading Your Role …
-              </Text>
-            </View>
+            <SafeAreaView style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+              <Text style={styles.loadingText}>Loading Your Dashboard ...</Text>
+            </SafeAreaView>
           ) : (
             <AppStack />
           )
@@ -457,7 +372,7 @@ function RootApp() {
         )}
       </NavigationContainer>
 
-      <Toast />
+      {/* Single Toast provider is mounted above via <ToastHost /> */}
     </SafeAreaView>
   );
 }
@@ -466,7 +381,6 @@ function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
   const crumb = crumbs?.[targetIndex];
   if (!crumb || !navigationRef.current) return;
 
-  // If the target is a top-level route (no parents)
   if (!crumb.parents || crumb.parents.length === 0) {
     navigationRef.current.dispatch(
       CommonActions.reset({
@@ -477,7 +391,6 @@ function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
     return;
   }
 
-  // For nested ones, rebuild the full parent chain
   const top = crumb.parents[0];
   let params = {};
   let cursor = params;
@@ -491,7 +404,6 @@ function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
   cursor.screen = crumb.name;
   cursor.params = crumb.params ?? {};
 
-  // Reset stack to this hierarchy
   navigationRef.current.dispatch(
     CommonActions.reset({
       index: 0,
@@ -504,31 +416,38 @@ function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
 const styles = StyleSheet.create({
   safeWrap: { flex: 1, backgroundColor: "transparent" },
 
-  /* Breadcrumbs */
   breadcrumbsWrap: {
     paddingHorizontal: 16,
-    paddingBottom: 6,
-    minHeight: 24,
+    marginTop: -48,
+    marginBottom: 16,
   },
-  breadcrumbsPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: "transparent",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "transparent",
-    maxWidth: undefined,
-    minWidth: 220,
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "nowrap",
-  },
-  breadcrumbText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
+  breadcrumbLine: {
+    fontWeight: "600",
     letterSpacing: 0.2,
-    opacity: 0.95,
+    width: "100%",
+    flexShrink: 1,
+    fontSize: 13,
+    color: "rgba(255,255,255,0.82)",
+  },
+  breadcrumbLink: {
+    color: "#FFFFFF",
+    textDecorationLine: "none",
+  },
+  breadcrumbSep: {
+    color: "rgba(255,255,255,0.65)",
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "transparent",
+  },
+  loadingText: {
+    marginTop: 16,
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 20,
+    textAlign: "center",
   },
 });

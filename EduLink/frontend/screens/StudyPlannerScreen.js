@@ -1,4 +1,5 @@
 // frontend/screens/StudyPlannerScreen.js
+import Screen from "../components/Screen";
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -7,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import {
   TextInput,
@@ -18,6 +20,10 @@ import {
   Portal,
   Dialog,
 } from "react-native-paper";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   doc,
   collection,
@@ -31,15 +37,44 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../services/firebaseAuth";
 import Toast from "react-native-toast-message";
-
+import { BlurView } from "expo-blur";
 import {
   EDU_COLORS,
   Surfaces,
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
+import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+
+/* ---------- Reusable Blur card ---------- */
+const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+    {children}
+  </BlurView>
+);
+const PAGE_TOP_OFFSET = 24;
+
+function useToast() {
+  const insets = useSafeAreaInsets();
+  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
+
+  return React.useCallback(
+    (type, text1, text2) => {
+      Toast.show({
+        type, // "success" | "error" | "info"
+        text1,
+        text2,
+        position: "top",
+        topOffset,
+        visibilityTime: 2600,
+      });
+    },
+    [topOffset]
+  );
+}
 
 export default function StudyPlannerScreen() {
+  const showToast = useToast();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
   const [studySessions, setStudySessions] = useState([]);
@@ -180,12 +215,7 @@ export default function StudyPlannerScreen() {
   /* -------------------- Mutations -------------------- */
   const addTask = async () => {
     if (!taskTitle.trim()) {
-      Toast.show({
-        type: "error",
-        text1: "Please enter a task title",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Please enter a task title", "top");
       return;
     }
     try {
@@ -215,21 +245,10 @@ export default function StudyPlannerScreen() {
       setShowAddTask(false);
       fetchTasks();
 
-      Toast.show({
-        type: "success",
-        text1: "Task added",
-        text2: `For ${formatDate(selectedDate)} ✅`,
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("success", "Task added"`For ${formatDate(selectedDate)} ✅`);
     } catch (e) {
       console.error("addTask", e);
-      Toast.show({
-        type: "error",
-        text1: "Failed to add task",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Failed to add task");
     }
   };
 
@@ -239,12 +258,7 @@ export default function StudyPlannerScreen() {
       fetchTasks();
     } catch (e) {
       console.error("updateTask", e);
-      Toast.show({
-        type: "error",
-        text1: "Failed to update task",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Failed to update task");
     }
   };
 
@@ -252,32 +266,17 @@ export default function StudyPlannerScreen() {
     try {
       await deleteDoc(doc(db, "studyTasks", id));
       fetchTasks();
-      Toast.show({
-        type: "success",
-        text1: "Task deleted",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("success", "Task deleted");
     } catch (e) {
       console.error("deleteTask", e);
-      Toast.show({
-        type: "error",
-        text1: "Failed to delete task",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Failed to delete task");
     }
   };
 
   /* -------------------- Session controls -------------------- */
   const startStudySession = () => {
     if (!sessionSubject.trim()) {
-      Toast.show({
-        type: "error",
-        text1: "Please select a subject",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Please select a subject");
       return;
     }
     const data = {
@@ -344,21 +343,14 @@ export default function StudyPlannerScreen() {
       setPauseStartTime(null);
       fetchStudySessions();
 
-      Toast.show({
-        type: "success",
-        text1: "Study session completed 🎉",
-        text2: `Duration: ${actual} minutes`,
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast(
+        "success",
+        "Study session completed 🎉",
+        `Duration: ${actual} minutes`
+      );
     } catch (e) {
       console.error("endStudySession", e);
-      Toast.show({
-        type: "error",
-        text1: "Failed to save study session",
-        position: "top",
-        topOffset: Platform.OS === "ios" ? 64 : 70,
-      });
+      showToast("error", "Failed to save study session");
     }
   };
 
@@ -391,17 +383,27 @@ export default function StudyPlannerScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingWrap}>
-        <Text style={styles.loadingText}>Loading Your Study Planner …</Text>
-      </View>
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+        <Text
+          style={{
+            fontSize: 20,
+            color: "white",
+            fontWeight: "600",
+            textAlign: "center",
+          }}
+        >
+          Loading Your Study Planner …
+        </Text>
+      </SafeAreaView>
     );
   }
 
   /* ===================== UI ===================== */
   return (
     <View style={styles.screen}>
-      {/* Header Card */}
-      <View style={[styles.card, styles.headerCard]}>
+      {/* Header */}
+      <BlurCard style={styles.chatBubble}>
         <Title style={styles.headerTitle}>📚 Study Planner</Title>
         <View style={styles.dateRow}>
           <IconButton
@@ -432,40 +434,44 @@ export default function StudyPlannerScreen() {
             }
           />
         </View>
-      </View>
+      </BlurCard>
 
       <ScrollView
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
       >
         {/* Stats */}
         <View style={styles.statsRow}>
-          <Card style={styles.statCard}>
+          <BlurCard style={styles.statCardInline}>
             <Card.Content style={styles.statContent}>
               <Text style={styles.statNumber}>{tasks.length}</Text>
               <Text style={styles.statLabel}>Tasks</Text>
             </Card.Content>
-          </Card>
-          <Card style={styles.statCard}>
+          </BlurCard>
+
+          <BlurCard style={styles.statCardInline}>
             <Card.Content style={styles.statContent}>
               <Text style={styles.statNumber}>
                 {tasks.filter((t) => t.completed).length}
               </Text>
               <Text style={styles.statLabel}>Completed</Text>
             </Card.Content>
-          </Card>
-          <Card style={styles.statCard}>
+          </BlurCard>
+
+          <BlurCard style={styles.statCardInline}>
             <Card.Content style={styles.statContent}>
               <Text style={styles.statNumber}>{getTotalStudyTime()}</Text>
               <Text style={styles.statLabel}>Min Studied</Text>
             </Card.Content>
-          </Card>
+          </BlurCard>
         </View>
 
         {/* Active Session */}
         {activeSession && (
-          <Card
+          <BlurCard
             style={[
+              styles.chatBubble,
               styles.sessionActiveCard,
               isPaused && styles.sessionPausedCard,
             ]}
@@ -562,7 +568,7 @@ export default function StudyPlannerScreen() {
                 )}
               </View>
             </Card.Content>
-          </Card>
+          </BlurCard>
         )}
 
         {/* Tasks */}
@@ -581,14 +587,14 @@ export default function StudyPlannerScreen() {
           </View>
 
           {tasks.length === 0 ? (
-            <Card style={styles.emptyCard}>
+            <BlurCard style={styles.chatBubble}>
               <Card.Content style={styles.emptyContent}>
                 <Text style={styles.emptyTitle}>
                   No tasks for {formatDate(selectedDate)}
                 </Text>
                 <Text style={styles.emptySub}>Add a task to get started!</Text>
               </Card.Content>
-            </Card>
+            </BlurCard>
           ) : (
             <View style={styles.listClamp}>
               <ScrollView
@@ -596,7 +602,7 @@ export default function StudyPlannerScreen() {
                 nestedScrollEnabled
               >
                 {tasks.map((task) => (
-                  <Card key={task.id} style={styles.itemCard}>
+                  <BlurCard key={task.id} style={styles.chatBubble}>
                     <Card.Content>
                       <View style={styles.itemHead}>
                         <View style={{ flex: 1, marginRight: 10 }}>
@@ -653,7 +659,7 @@ export default function StudyPlannerScreen() {
                         </Text>
                       </View>
                     </Card.Content>
-                  </Card>
+                  </BlurCard>
                 ))}
               </ScrollView>
             </View>
@@ -674,7 +680,7 @@ export default function StudyPlannerScreen() {
           </View>
 
           {studySessions.length === 0 ? (
-            <Card style={styles.emptyCard}>
+            <BlurCard style={styles.chatBubble}>
               <Card.Content style={styles.emptyContent}>
                 <Text style={styles.emptyTitle}>
                   No study sessions for {formatDate(selectedDate)}
@@ -683,7 +689,7 @@ export default function StudyPlannerScreen() {
                   Start a session to track your study time!
                 </Text>
               </Card.Content>
-            </Card>
+            </BlurCard>
           ) : (
             <View style={styles.listClamp}>
               <ScrollView
@@ -739,175 +745,173 @@ export default function StudyPlannerScreen() {
         </View>
       </ScrollView>
 
-      {/* Add Task Modal */}
-      <View style={styles.imageOverlay}>
-        <Portal>
-          <Dialog
-            visible={showAddTask}
-            onDismiss={() => setShowAddTask(false)}
-            style={styles.dialog}
-          >
-            <Dialog.Title style={styles.dialogTitle}>
-              Add Task for {formatDate(selectedDate)}
-            </Dialog.Title>
-            <Dialog.Content>
-              <TextInput
-                label="Task Title *"
-                value={taskTitle}
-                onChangeText={setTaskTitle}
-                style={styles.input}
-              />
-              <TextInput
-                label="Description"
-                value={taskDescription}
-                onChangeText={setTaskDescription}
-                multiline
-                style={styles.input}
-              />
-              <TextInput
-                label="Subject"
-                value={taskSubject}
-                onChangeText={setTaskSubject}
-                style={styles.input}
-              />
+      {/* Add Task Modal (with overlay) */}
+      {showAddTask && <View style={styles.overlay} pointerEvents="none" />}
+      <Portal>
+        <Dialog
+          visible={showAddTask}
+          onDismiss={() => setShowAddTask(false)}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>
+            Add Task for {formatDate(selectedDate)}
+          </Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              label="Task Title *"
+              value={taskTitle}
+              onChangeText={setTaskTitle}
+              style={styles.input}
+            />
+            <TextInput
+              label="Description"
+              value={taskDescription}
+              onChangeText={setTaskDescription}
+              multiline
+              style={styles.input}
+            />
+            <TextInput
+              label="Subject"
+              value={taskSubject}
+              onChangeText={setTaskSubject}
+              style={styles.input}
+            />
 
-              <View style={styles.priorityRow}>
-                <Text style={styles.priorityLabel}>Priority</Text>
-                <View style={styles.priorityChips}>
-                  {["low", "medium", "high"].map((p) => {
-                    const active = taskPriority === p;
-                    return (
-                      <Chip
-                        key={p}
-                        selected={active}
-                        onPress={() => setTaskPriority(p)}
-                        style={[
-                          styles.prChip,
-                          {
-                            backgroundColor: active
-                              ? getPriorityColor(p)
-                              : EDU_COLORS.gray100,
-                          },
-                        ]}
-                        textStyle={[
-                          styles.prChipText,
-                          active && { color: "#fff" },
-                        ]}
-                      >
-                        {p}
-                      </Chip>
-                    );
-                  })}
-                </View>
+            <View style={styles.priorityRow}>
+              <Text style={styles.priorityLabel}>Priority</Text>
+              <View style={styles.priorityChips}>
+                {["low", "medium", "high"].map((p) => {
+                  const active = taskPriority === p;
+                  return (
+                    <Chip
+                      key={p}
+                      selected={active}
+                      onPress={() => setTaskPriority(p)}
+                      style={[
+                        styles.prChip,
+                        {
+                          backgroundColor: active
+                            ? getPriorityColor(p)
+                            : EDU_COLORS.gray100,
+                        },
+                      ]}
+                      textStyle={[
+                        styles.prChipText,
+                        active && { color: "#fff" },
+                      ]}
+                    >
+                      {p}
+                    </Chip>
+                  );
+                })}
               </View>
+            </View>
 
-              <TextInput
-                label="Estimated Time (minutes)"
-                value={taskEstimatedTime}
-                onChangeText={setTaskEstimatedTime}
-                keyboardType="numeric"
-                style={styles.input}
-              />
-            </Dialog.Content>
-            <Dialog.Actions style={styles.dialogActions}>
-              <Button onPress={() => setShowAddTask(false)} mode="text">
-                Cancel
-              </Button>
-              <Button
-                onPress={addTask}
-                mode="contained"
-                style={styles.btnSmallPrimary}
-              >
-                Add Task
-              </Button>
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
-      </View>
+            <TextInput
+              label="Estimated Time (minutes)"
+              value={taskEstimatedTime}
+              onChangeText={setTaskEstimatedTime}
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button onPress={() => setShowAddTask(false)} mode="text">
+              Cancel
+            </Button>
+            <Button
+              onPress={addTask}
+              mode="contained"
+              style={styles.btnSmallPrimary}
+            >
+              Add Task
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
-      {/* Add Study Session Modal */}
-      <View style={styles.imageOverlay}>
-        <Portal>
-          <Dialog
-            visible={showAddSession}
-            onDismiss={() => setShowAddSession(false)}
-            style={styles.dialog}
-          >
-            <Dialog.Title style={styles.dialogTitle}>
-              Start Study Session for {formatDate(selectedDate)}
-            </Dialog.Title>
-            <Dialog.Content>
-              <TextInput
-                label="Subject *"
-                value={sessionSubject}
-                onChangeText={setSessionSubject}
-                style={styles.input}
-              />
-              <TextInput
-                label="What are you studying?"
-                value={sessionDescription}
-                onChangeText={setSessionDescription}
-                multiline
-                style={styles.input}
-              />
-              <TextInput
-                label="Planned Duration (minutes)"
-                value={sessionDuration}
-                onChangeText={setSessionDuration}
-                keyboardType="numeric"
-                style={styles.input}
-              />
-            </Dialog.Content>
-            <Dialog.Actions style={styles.dialogActions}>
-              <Button onPress={() => setShowAddSession(false)} mode="text">
-                Cancel
-              </Button>
-              <Button
-                onPress={startStudySession}
-                mode="contained"
-                style={styles.btnSmallPrimary}
-              >
-                Start Session
-              </Button>
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
-      </View>
+      {/* Add Study Session Modal (with overlay) */}
+      {showAddSession && <View style={styles.overlay} pointerEvents="none" />}
+      <Portal>
+        <Dialog
+          visible={showAddSession}
+          onDismiss={() => setShowAddSession(false)}
+          style={styles.dialog}
+        >
+          <Dialog.Title style={styles.dialogTitle}>
+            Start Study Session for {formatDate(selectedDate)}
+          </Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              label="Subject *"
+              value={sessionSubject}
+              onChangeText={setSessionSubject}
+              style={styles.input}
+            />
+            <TextInput
+              label="What are you studying?"
+              value={sessionDescription}
+              onChangeText={setSessionDescription}
+              multiline
+              style={styles.input}
+            />
+            <TextInput
+              label="Planned Duration (minutes)"
+              value={sessionDuration}
+              onChangeText={setSessionDuration}
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button onPress={() => setShowAddSession(false)} mode="text">
+              Cancel
+            </Button>
+            <Button
+              onPress={startStudySession}
+              mode="contained"
+              style={styles.btnSmallPrimary}
+            >
+              Start Session
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 }
 
 /* ===================== Styles (tokens-driven) ===================== */
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 120, paddingHorizontal: 16 },
   screen: {
     flex: 1,
-    backgroundColor: "transparent", // show global gradient
+    paddingTop: PAGE_TOP_OFFSET, // shift ALL children down uniformly
+    // global gradient shows
   },
 
-  /* Card base */
-  card: {
-    backgroundColor: Surfaces.solid,
+  /* Overlay for dialogs (requested color) */
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    zIndex: 10,
+  },
+
+  /* BlurCard base + tidy rails */
+  blurCard: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Surfaces.border,
+    overflow: "hidden",
+  },
+  chatBubble: {
     marginHorizontal: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
 
   /* Header */
-  headerCard: {
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
   headerTitle: {
     color: EDU_COLORS.textPrimary,
     fontSize: 22,
@@ -933,33 +937,29 @@ const styles = StyleSheet.create({
   todayHint: { color: EDU_COLORS.gray500, fontSize: 10, marginTop: 2 },
 
   /* Content */
-  content: { flex: 1, marginTop: 12 },
+  content: { flex: 1, marginTop: 6 },
 
   /* Stats */
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 10,
-    marginHorizontal: 16,
-    marginBottom: 14,
+    alignItems: "stretch",
+    gap: 8, // spacing between cards
+    marginHorizontal: 16, // align to your 16px rails
+    marginBottom: 12,
   },
-  statCard: {
+
+  statCardInline: {
     flex: 1,
-    backgroundColor: Surfaces.solid,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 2 },
-      },
-      android: { elevation: 3 },
-    }),
+    minWidth: 0, // prevent overflow on small screens
+    marginHorizontal: 0, // IMPORTANT: no horizontal margins here
+    marginBottom: 0,
+    paddingHorizontal: 14, // keep your nice padding
+    paddingVertical: 12,
+    // (the BlurCard base already gives border/borderRadius/blur)
   },
-  statContent: { alignItems: "center", paddingVertical: 14 },
+
+  statContent: { alignItems: "center", paddingVertical: 1 },
   statNumber: {
     fontSize: 22,
     fontWeight: "800",
@@ -974,14 +974,10 @@ const styles = StyleSheet.create({
 
   /* Active session card */
   sessionActiveCard: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    backgroundColor: "#F0F9FF",
     borderLeftWidth: 4,
     borderLeftColor: PALETTE_60_30_10.accent10,
   },
   sessionPausedCard: {
-    backgroundColor: "#FEF3C7",
     borderLeftColor: EDU_COLORS.warning,
   },
   sessionHead: {
@@ -1016,8 +1012,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: "hidden",
   },
-  badgeActive: { backgroundColor: "#DCFCE7", color: "#166534" },
-  badgePaused: { backgroundColor: "#FEF3C7", color: "#92400E" },
+  badgeActive: { color: "#166534" },
+  badgePaused: { color: "#92400E" },
 
   sessionActions: {
     flexDirection: "row",
@@ -1030,13 +1026,12 @@ const styles = StyleSheet.create({
   btnOutlined: {
     borderRadius: 20,
     borderColor: EDU_COLORS.warning,
-    backgroundColor: "#FFF8E1",
   },
   btnContainedSuccess: {
     borderRadius: 20,
     backgroundColor: EDU_COLORS.success,
   },
-  btnContainedDanger: { borderRadius: 20, backgroundColor: "#EF4444" },
+  btnContainedDanger: { borderRadius: 20 },
   btnSmallPrimary: { borderRadius: 14, backgroundColor: Buttons.primaryBg },
 
   durationBox: {
@@ -1074,7 +1069,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "900", color: EDU_COLORS.gray700 },
 
-  /* Lists clamp (max-height visual control) */
+  /* Lists clamp */
   listClamp: { maxHeight: 300 },
 
   /* Generic list cards */
@@ -1124,13 +1119,6 @@ const styles = StyleSheet.create({
   priorityChip: { marginRight: 6, borderRadius: 12 },
   priorityText: { color: "#fff", fontSize: 10, fontWeight: "800" },
 
-  modelOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(2, 6, 23, 0.55)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 16,
-  },
   /* Sessions list */
   sessionRow: {
     flexDirection: "row",
@@ -1162,13 +1150,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
   },
-  timeOver: { color: "#EF4444", backgroundColor: "#FEF2F2" },
-  timeUnder: { color: EDU_COLORS.success, backgroundColor: "#F0FDF4" },
+  timeOver: { color: "#EF4444" },
+  timeUnder: { color: EDU_COLORS.success },
 
   /* Dialogs (modals) */
   dialog: {
     borderRadius: 16,
-
     backgroundColor: Surfaces.solid,
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
@@ -1190,7 +1177,6 @@ const styles = StyleSheet.create({
   /* Inputs */
   input: {
     marginBottom: 12,
-    backgroundColor: "#fff",
     borderRadius: 12,
   },
 
@@ -1208,7 +1194,7 @@ const styles = StyleSheet.create({
   /* Loading */
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: {
-    fontSize: 20, // Increased font size
+    fontSize: 20,
     color: "white",
     fontWeight: "600",
     textAlign: "center",

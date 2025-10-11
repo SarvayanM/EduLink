@@ -1,4 +1,5 @@
 // frontend/screens/QuestionFeedScreen.js
+import Screen from "../components/Screen";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -14,10 +15,14 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import * as Sharing from "expo-sharing";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
+import {
+  useSafeAreaInsets,
+  SafeAreaView,
+} from "react-native-safe-area-context";
+import { BlurView } from "expo-blur";
 import { Button, TextInput, Snackbar, Divider } from "react-native-paper";
 import Toast from "react-native-toast-message";
+import { NAVBAR_HEIGHT } from "../components/TopNavbar";
 
 import {
   EDU_COLORS,
@@ -39,7 +44,35 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 
+const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+    {children}
+  </BlurView>
+);
+
+const PAGE_TOP_OFFSET = 24;
+
+function useToast() {
+  const insets = useSafeAreaInsets();
+  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
+
+  return React.useCallback(
+    (type, text1, text2) => {
+      Toast.show({
+        type, // "success" | "error" | "info"
+        text1,
+        text2,
+        position: "top",
+        topOffset,
+        visibilityTime: 2600,
+      });
+    },
+    [topOffset]
+  );
+}
+
 export default function QuestionFeedScreen() {
+  const showToast = useToast();
   const insets = useSafeAreaInsets();
 
   const [questions, setQuestions] = useState([]);
@@ -85,12 +118,7 @@ export default function QuestionFeedScreen() {
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
-      // Global toast is fine here (no modal open)
-      Toast.show({
-        type: "error",
-        text1: "Couldn’t load your profile",
-        text2: "Please try again.",
-      });
+      showToast("error", "Couldn’t load your profile", "Please try again.");
     }
   };
 
@@ -136,11 +164,11 @@ export default function QuestionFeedScreen() {
       setQuestions(questionsData);
     } catch (error) {
       console.error("Error fetching questions:", error);
-      Toast.show({
-        type: "error",
-        text1: "Couldn’t load questions",
-        text2: "Check your connection and try again.",
-      });
+      showToast(
+        "error",
+        "Couldn’t load questions",
+        "Check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -169,7 +197,6 @@ export default function QuestionFeedScreen() {
         status: "answered",
       });
 
-      // best-effort notification
       try {
         await addDoc(collection(db, "notifications"), {
           userId: selectedQuestion.askedBy,
@@ -191,7 +218,6 @@ export default function QuestionFeedScreen() {
       setSnackText("Answer posted. Thanks for helping the community! 🎉");
       setSnackVisible(true);
 
-      // close after a short delay to let the user read the snackbar
       setTimeout(() => {
         setShowAnswerForm(false);
         setSelectedQuestion(null);
@@ -227,7 +253,7 @@ export default function QuestionFeedScreen() {
   return (
     <View style={styles.screen}>
       {/* Header */}
-      <View style={[styles.surfaceCard, styles.headerCard]}>
+      <BlurCard style={[styles.chatBubble]}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Q&A Forum</Text>
           <View style={styles.badge}>
@@ -235,10 +261,10 @@ export default function QuestionFeedScreen() {
           </View>
         </View>
         <Text style={styles.subtitle}>Unanswered questions</Text>
-      </View>
+      </BlurCard>
 
       {/* Subject chips */}
-      <View style={[styles.surfaceCard, styles.filterCard]}>
+      <BlurCard style={[styles.chatBubble]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -271,11 +297,11 @@ export default function QuestionFeedScreen() {
             );
           })}
         </ScrollView>
-      </View>
+      </BlurCard>
 
       {/* Grade chips (teacher/tutor) */}
       {(userRole === "teacher" || userRole === "tutor") && (
-        <View style={[styles.surfaceCard, styles.filterCard]}>
+        <BlurCard style={[styles.chatBubble]}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -321,7 +347,7 @@ export default function QuestionFeedScreen() {
               });
             })()}
           </ScrollView>
-        </View>
+        </BlurCard>
       )}
 
       {/* Questions */}
@@ -336,19 +362,14 @@ export default function QuestionFeedScreen() {
           const created =
             q.createdAt?.toDate?.()?.toLocaleDateString?.() || "Recent";
           return (
-            <View style={styles.itemWrap}>
+            <View style={[styles.chatBubble]}>
               {!isMyQuestion && (
                 <Text style={styles.nameLabel}>
                   {q.askedByName || "Anonymous"}
                 </Text>
               )}
 
-              <View
-                style={[
-                  styles.bubble,
-                  isMyQuestion ? styles.bubbleMine : styles.bubbleOther,
-                ]}
-              >
+              <BlurCard style={[styles.chatBubble]}>
                 {q.image ? (
                   <Pressable
                     accessibilityRole="imagebutton"
@@ -409,7 +430,7 @@ export default function QuestionFeedScreen() {
                     </Button>
                   )}
                 </View>
-              </View>
+              </BlurCard>
             </View>
           );
         }}
@@ -418,7 +439,7 @@ export default function QuestionFeedScreen() {
             <View style={{ padding: 24, alignItems: "center" }}>
               <Text
                 style={{
-                  fontSize: 20, // Increased font size
+                  fontSize: 20,
                   color: "white",
                   fontWeight: "600",
                   textAlign: "center",
@@ -431,12 +452,12 @@ export default function QuestionFeedScreen() {
         }
       />
 
-      {/* ---------------- Answer Modal (Solid + Keyboard-safe) ---------------- */}
+      {/* ---------------- Answer Modal ---------------- */}
       <Modal
         visible={showAnswerForm}
         animationType="fade"
         transparent
-        statusBarTranslucent // <= Android: let the modal extend under status bar
+        statusBarTranslucent
         presentationStyle="overFullScreen"
         onRequestClose={() => setShowAnswerForm(false)}
       >
@@ -471,12 +492,7 @@ export default function QuestionFeedScreen() {
                     </Text>
                     {!!selectedQuestion.subject && (
                       <>
-                        <Divider
-                          style={{
-                            marginVertical: 10,
-                            backgroundColor: "#E2E8F0",
-                          }}
-                        />
+                        <Divider style={{ marginVertical: 10 }} />
                         <Text style={styles.previewMeta}>
                           📚 {selectedQuestion.subject}
                           {selectedQuestion.grade
@@ -525,7 +541,6 @@ export default function QuestionFeedScreen() {
                 </View>
               </ScrollView>
 
-              {/* In-modal snackbar so it never hides behind the modal/keyboard */}
               <Snackbar
                 visible={snackVisible}
                 onDismiss={() => setSnackVisible(false)}
@@ -544,7 +559,7 @@ export default function QuestionFeedScreen() {
         visible={showImageModal}
         animationType="fade"
         transparent
-        statusBarTranslucent // <= Android: let the modal extend under status bar
+        statusBarTranslucent
         presentationStyle="overFullScreen"
         onRequestClose={() => setShowImageModal(false)}
       >
@@ -558,11 +573,11 @@ export default function QuestionFeedScreen() {
                   try {
                     await Sharing.shareAsync(selectedImage);
                   } catch {
-                    Toast.show({
-                      type: "error",
-                      text1: "Share failed",
-                      text2: "Couldn’t share the image.",
-                    });
+                    showToast(
+                      "error",
+                      "Share failed",
+                      "Couldn’t share the image."
+                    );
                   }
                 }
               }}
@@ -589,51 +604,53 @@ export default function QuestionFeedScreen() {
       </Modal>
 
       {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
-        </View>
+        <SafeAreaView style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+          <Text
+            style={{
+              fontSize: 20,
+              color: "white",
+              fontWeight: "600",
+              textAlign: "center",
+            }}
+          >
+            Loading ...
+          </Text>
+        </SafeAreaView>
       )}
 
-      {/* Global toast (kept at top; offset uses safe area). We avoid using this while the Answer modal is open */}
-      <Toast
-        position="top"
-        topOffset={(insets?.top || 0) + 12}
-        visibilityTime={2600}
-      />
+      {/* Global toast */}
+    
     </View>
   );
 }
 
 /* ===================== Styles ===================== */
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+
   // Root (transparent so global gradient shows)
   screen: {
     flex: 1,
-    backgroundColor: "transparent",
+    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
   },
 
-  /* ---------- Cards & layout ---------- */
-  surfaceCard: {
-    backgroundColor: Surfaces.solid,
+  /* ---------- Shared blur card ---------- */
+  blurCard: {
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: Surfaces.border,
+    overflow: "hidden",
+    backgroundColor: "transparent",
+  },
+  chatBubble: {
     marginHorizontal: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  headerCard: {
-    marginTop: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-  },
+
+  /* ---------- Header ---------- */
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -650,11 +667,6 @@ const styles = StyleSheet.create({
     color: Buttons.accentText,
     fontWeight: "800",
     fontSize: 12,
-  },
-  filterCard: {
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
   },
 
   /* ---------- Typography ---------- */
@@ -676,18 +688,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: EDU_COLORS.gray100,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
   },
   chipActive: {
     backgroundColor: Buttons.accentBg,
+    borderColor: Buttons.accentBg,
   },
   chipText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#475569",
+    fontSize: 14,
+    fontWeight: "600",
+    color: EDU_COLORS.gray700,
   },
   chipTextActive: {
     color: Buttons.accentText,
@@ -703,10 +718,15 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
 
-  /* ---------- Item ---------- */
-  itemWrap: {
-    marginBottom: 16,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "transparent",
   },
+  loadingText: { marginTop: 16, color: "#fff", fontWeight: "600" },
+
+  /* ---------- Items ---------- */
   nameLabel: {
     fontSize: 12,
     fontWeight: "700",
@@ -714,38 +734,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginLeft: 6,
   },
-
-  bubble: {
-    padding: 14,
-    borderRadius: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.08,
-        shadowRadius: 3,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  bubbleMine: {
-    backgroundColor: PALETTE_60_30_10.primary30,
-    borderBottomRightRadius: 6,
-  },
-  bubbleOther: {
-    backgroundColor: Surfaces.solid,
-    borderBottomLeftRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-  },
-
   questionImage: {
     width: "100%",
     height: 180,
     borderRadius: 12,
     marginBottom: 10,
   },
-
   questionText: {
     fontSize: 15,
     lineHeight: 21,
@@ -759,13 +753,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#EEF2FF",
     marginBottom: 8,
   },
   tagText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#4F46E5",
+    color: Buttons.accentBg,
   },
 
   metaRow: {
@@ -795,7 +788,7 @@ const styles = StyleSheet.create({
   /* ---------- Modal: Answer (Solid) ---------- */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 23, 0.55)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // updated as requested
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
@@ -837,7 +830,6 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -850,7 +842,6 @@ const styles = StyleSheet.create({
   modalBody: { padding: 16 },
 
   previewBoxSolid: {
-    backgroundColor: "#F8FAFC",
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
@@ -867,7 +858,6 @@ const styles = StyleSheet.create({
   previewMeta: { fontSize: 12, color: "#64748B" },
 
   answerInput: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     fontSize: 15,
     textAlignVertical: "top",
@@ -904,7 +894,7 @@ const styles = StyleSheet.create({
   /* ---------- Modal: Image ---------- */
   imageModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 23, 0.55)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // updated as requested
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
@@ -917,7 +907,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   iconBtn: {
-    backgroundColor: "rgba(255,255,255,0.2)",
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -937,7 +926,7 @@ const styles = StyleSheet.create({
   /* ---------- Loading Overlay ---------- */
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(2,6,23,0.25)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // updated as requested
     alignItems: "center",
     justifyContent: "center",
   },

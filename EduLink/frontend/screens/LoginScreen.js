@@ -1,3 +1,4 @@
+import Screen from "../components/Screen";
 import { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -187,8 +188,6 @@ export default function LoginScreen({ route, navigation }) {
     <PaperProvider theme={paperTheme}>
       <StatusBar translucent barStyle="light-content" />
       <View style={styles.root}>
-     
-
         {/* Subtle background pattern */}
         <View style={styles.backgroundPattern}>
           {[...Array(20)].map((_, i) => (
@@ -432,10 +431,10 @@ export default function LoginScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
   root: {
     flex: 1,
     // Solid brand background (gradient removed)
-    backgroundColor: "transparent",
   },
   kav: { flex: 1 },
   content: {
@@ -452,7 +451,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#EAF8FF22",
+
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -479,7 +478,6 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#FFFFFF",
   },
 
   // Header
@@ -518,7 +516,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   input: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
     fontSize: 16,
   },
