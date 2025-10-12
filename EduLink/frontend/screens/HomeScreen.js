@@ -10,12 +10,16 @@ import {
   ActivityIndicator,
   Platform,
   Dimensions,
+  Animated,
+  // Added StatusBar for a clean look
+  StatusBar,
 } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import {
+  // Using the provided color constants
   EDU_COLORS,
   Surfaces,
   Buttons,
@@ -38,20 +42,28 @@ import { BlurView } from "expo-blur";
 
 /* ---------------- Constants ---------------- */
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const RADIUS = 20;
-const RADIUS_LG = 22;
-const PAGE_TOP_OFFSET = 24;
-const CONTENT_HORIZONTAL_PADDING = 20;
-const CARD_HORIZONTAL_PADDING = 16;
-const CARD_VERTICAL_PADDING = 14;
+// Renaming to be more specific to UI components
+const CORNER_RADIUS = 16; // Slightly reduced for a cleaner, modern look
 
-const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+const PAGE_TOP_OFFSET = 16; // Reduced top offset as SafeAreaView handles it
+const CONTENT_HORIZONTAL_PADDING = 20;
+const CARD_HORIZONTAL_PADDING = 18; // Increased slightly for more breathing room
+const CARD_VERTICAL_PADDING = 18;
+
+// Reusable Blur Card Component for consistent design
+const BlurCard = ({
+  children,
+  style,
+  intensity = 45,
+  tint = "systemMaterialLight",
+}) => (
+  // Increased intensity for better blur effect on a light background
   <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
     {children}
   </BlurView>
 );
 
-/* ---------------- Card Component ---------------- */
+/* ---------------- Card Component (unused but kept for pattern) ---------------- */
 const Card = memo(({ style, children }) => (
   <View style={[styles.card, style]}>{children}</View>
 ));
@@ -59,6 +71,7 @@ const Card = memo(({ style, children }) => (
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
+  /* ---------- State (Logic unchanged) ---------- */
   const [userGrade, setUserGrade] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userPoints, setUserPoints] = useState(0);
@@ -74,6 +87,35 @@ export default function HomeScreen({ navigation }) {
   const [encouragements, setEncouragements] = useState([]);
   const [expandedQuestions, setExpandedQuestions] = useState({});
 
+  const [trackW, setTrackW] = useState(0);
+  const barAnim = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (!loading) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(barAnim, {
+          toValue: 1,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(barAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [loading, barAnim]);
+
+  const barTranslate = barAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-80, Math.max(trackW - 80, 0)], // width-aware
+  });
+
+  /* ---------- Utility Functions (Logic unchanged) ---------- */
   const showToast = (type, text1, text2) =>
     Toast.show({
       type,
@@ -265,44 +307,72 @@ export default function HomeScreen({ navigation }) {
   const userClassrooms = getUserClassrooms();
 
   /* ---------- Loading Screen ---------- */
+  /**** replace your current `if (loading) { ... }` return with this ****/
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-        <Text style={styles.loadingText}>Loading your dashboard...</Text>
-      </SafeAreaView>
+      <View style={styles.loadingFullscreenCenter}>
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+          <Text style={styles.loadingTitle}>Loading Dashboard ...</Text>
+          <Text style={styles.loadingSubtitle}>
+            Fetching your classes, questions, and recent activity
+          </Text>
+
+          {/* Indeterminate progress bar (width-aware) */}
+          <View
+            style={styles.progressTrack}
+            onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+          >
+            <Animated.View
+              style={[
+                styles.progressBarIndeterminate, // <-- use the correct style
+                { transform: [{ translateX: barTranslate }] },
+              ]}
+            />
+          </View>
+        </View>
+      </View>
     );
   }
 
-  /* ---------- Main Screen ---------- */
+  /* ---------- Main Screen (Enhanced Layout and Styling) ---------- */
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" />
       {/* Header Section */}
       <BlurCard style={styles.headerCard}>
         <View style={styles.headerContent}>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.welcomeText}>Welcome back!</Text>
+            <Text style={styles.welcomeText}>
+              Welcome back! {userRole === "teacher" ? "👨‍🏫" : "🧑‍🎓"}
+            </Text>
             <Text style={styles.subtitle}>Ready to learn and grow</Text>
           </View>
 
           <View style={styles.headerActions}>
+            {/* Notification Button */}
             <Pressable
               onPress={() => navigation?.navigate?.("Notifications")}
               style={styles.notificationButton}
+              hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Open notifications"
             >
               <Text style={styles.notificationIcon}>🔔</Text>
               {unreadNotifications > 0 && (
                 <View style={styles.notificationBadge}>
-                  <Text style={styles.badgeText}>{unreadNotifications}</Text>
+                  <Text style={styles.badgeText}>
+                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                  </Text>
                 </View>
               )}
             </Pressable>
 
+            {/* Profile Avatar */}
             <Pressable
               onPress={() => navigation?.navigate?.("Profile")}
-              style={styles.avatar}
+              style={styles.avatarContainer}
+              hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Open profile"
             >
@@ -313,7 +383,9 @@ export default function HomeScreen({ navigation }) {
                 />
               ) : (
                 <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarText}>U</Text>
+                  <Text style={styles.avatarText}>
+                    {auth.currentUser?.email?.[0]?.toUpperCase() || "U"}
+                  </Text>
                 </View>
               )}
             </Pressable>
@@ -321,13 +393,16 @@ export default function HomeScreen({ navigation }) {
         </View>
       </BlurCard>
 
-      {/* Main Content */}
+      {/* Main Content ScrollView */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: PAGE_TOP_OFFSET },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Status Card */}
+        {/* Status Card (User Role/Points) - Moved outside the header but still prominent */}
         <BlurCard style={styles.statusCard}>
           <View style={styles.statusContent}>
             <View style={styles.statusInfo}>
@@ -340,10 +415,10 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <View style={styles.pointsContainer}>
-              <Text style={styles.pointsLabel}>Learning Points</Text>
               <Text style={styles.pointsValue}>
                 {Number.isFinite(userPoints) ? userPoints : 0}
               </Text>
+              <Text style={styles.pointsLabel}>Learning Points</Text>
             </View>
           </View>
         </BlurCard>
@@ -360,6 +435,7 @@ export default function HomeScreen({ navigation }) {
                 <Pressable
                   onPress={() => deleteEncouragement(e.id)}
                   style={styles.deleteButton}
+                  hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel="Dismiss encouragement"
                 >
@@ -369,6 +445,7 @@ export default function HomeScreen({ navigation }) {
             ))}
           </View>
         )}
+        <View style={styles.sectionDivider} />
 
         {/* My Classrooms Section */}
         <View style={styles.section}>
@@ -385,7 +462,7 @@ export default function HomeScreen({ navigation }) {
           ) : userClassrooms.length === 0 ? (
             <BlurCard style={styles.emptyClassroomsCard}>
               <Text style={styles.emptyClassroomsText}>
-                No classrooms found
+                No classrooms found based on your role and points.
               </Text>
             </BlurCard>
           ) : (
@@ -396,43 +473,51 @@ export default function HomeScreen({ navigation }) {
               keyboardShouldPersistTaps="handled"
             >
               {userClassrooms.map((c) => (
-                <BlurCard key={c.id} style={styles.classroomCard}>
-                  <View style={styles.classroomContent}>
-                    <Text style={styles.classroomTitle}>{c.title}</Text>
-                    <View style={styles.classroomStats}>
-                      <Text style={styles.statLabel}>
-                        {c.students} Students • {c.questions} Questions
+                <Pressable
+                  key={c.id}
+                  onPress={() => {
+                    const gradeLabel = c?.title?.replace?.("Grade ", "");
+                    if (!c?.id || !gradeLabel) {
+                      showToast(
+                        "error",
+                        "Unavailable",
+                        "Classroom details are missing."
+                      );
+                      return;
+                    }
+                    navigation?.navigate?.("ClassroomDetail", {
+                      classroomId: c.id,
+                      grade: gradeLabel,
+                      title: c.title,
+                    });
+                  }}
+                  style={({ pressed }) => [
+                    styles.classroomCardWrapper,
+                    { opacity: pressed ? 0.8 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${c.title}`}
+                >
+                  <BlurCard style={styles.classroomCard}>
+                    <View style={styles.classroomContent}>
+                      <Text style={styles.classroomTitle}>{c.title}</Text>
+                      <View style={styles.classroomStats}>
+                        <Text style={styles.statLabel}>
+                          {c.students} Students • {c.questions} Questions
+                        </Text>
+                      </View>
+                      {/* Removed the separate 'View' button, made the whole card pressable */}
+                      <Text style={styles.classroomViewCta}>
+                        Explore &rarr;
                       </Text>
                     </View>
-                    <Pressable
-                      style={styles.viewButton}
-                      onPress={() => {
-                        const gradeLabel = c?.title?.replace?.("Grade ", "");
-                        if (!c?.id || !gradeLabel) {
-                          showToast(
-                            "error",
-                            "Unavailable",
-                            "Classroom details are missing."
-                          );
-                          return;
-                        }
-                        navigation?.navigate?.("ClassroomDetail", {
-                          classroomId: c.id,
-                          grade: gradeLabel,
-                          title: c.title,
-                        });
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${c.title}`}
-                    >
-                      <Text style={styles.viewButtonText}>View</Text>
-                    </Pressable>
-                  </View>
-                </BlurCard>
+                  </BlurCard>
+                </Pressable>
               ))}
             </ScrollView>
           )}
         </View>
+        <View style={styles.sectionDivider} />
 
         {/* Help Needed Section */}
         <View style={styles.section}>
@@ -450,34 +535,50 @@ export default function HomeScreen({ navigation }) {
               onPress={() => navigation?.navigate?.("Q&A")}
               accessibilityRole="button"
               accessibilityLabel="Provide answers"
+              hitSlop={8}
             >
-              <Text style={styles.answerCtaText}>Provide Answer</Text>
+              <Text style={styles.answerCtaText}>View All</Text>
             </Pressable>
           </View>
 
           {Array.isArray(unansweredQuestions) &&
           unansweredQuestions.length > 0 ? (
             unansweredQuestions.map((q) => (
-              <BlurCard key={q.id} style={styles.questionCard}>
-                <View style={styles.questionHeader}>
-                  <View style={styles.questionBadge}>
-                    <Text style={styles.questionBadgeText}>
-                      {q.grade ? `Grade ${q.grade}` : "Grade"}
-                    </Text>
+              <Pressable
+                key={q.id}
+                onPress={() =>
+                  navigation?.navigate?.("QuestionDetail", {
+                    questionId: q.id,
+                  })
+                }
+                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                accessibilityRole="button"
+                accessibilityLabel="View question details"
+              >
+                <BlurCard style={styles.questionCard}>
+                  <View style={styles.questionHeader}>
+                    <View style={styles.questionBadge}>
+                      <Text style={styles.questionBadgeText}>
+                        {q.grade ? `Grade ${q.grade}` : "Grade"}
+                      </Text>
+                    </View>
+                    <Text style={styles.questionDate}>{q.date}</Text>
                   </View>
-                  <Text style={styles.questionDate}>{q.date}</Text>
-                </View>
-                <Text style={styles.questionText}>{q?.question || "—"}</Text>
-              </BlurCard>
+                  <Text style={styles.questionText} numberOfLines={2}>
+                    {q?.question || "—"}
+                  </Text>
+                </BlurCard>
+              </Pressable>
             ))
           ) : (
             <BlurCard style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🎉</Text>
               <Text style={styles.emptyText}>All questions answered!</Text>
-              <Text style={styles.emptySubtext}>Keep it up 🎓</Text>
+              <Text style={styles.emptySubtext}>Keep up the good work 🎓</Text>
             </BlurCard>
           )}
         </View>
+        <View style={styles.sectionDivider} />
 
         {/* Recent Solutions Section */}
         <View style={styles.section}>
@@ -493,6 +594,7 @@ export default function HomeScreen({ navigation }) {
                     setExpandedQuestions((p) => ({ ...p, [q.id]: !p[q.id] }))
                   }
                   style={styles.answerPressable}
+                  hitSlop={10}
                   accessibilityRole="button"
                   accessibilityLabel="Toggle solution"
                 >
@@ -501,8 +603,8 @@ export default function HomeScreen({ navigation }) {
                   </Text>
                   <Text style={styles.expandHint}>
                     {expandedQuestions[q.id]
-                      ? "Tap to collapse"
-                      : "Tap to expand"}
+                      ? "Collapse solution ▲"
+                      : "Expand solution ▼"}
                   </Text>
                 </Pressable>
 
@@ -528,7 +630,9 @@ export default function HomeScreen({ navigation }) {
                       ))
                     ) : (
                       <View style={styles.solutionCard}>
-                        <Text style={styles.solutionText}>No details</Text>
+                        <Text style={styles.solutionText}>
+                          No solution provided yet.
+                        </Text>
                       </View>
                     )}
                   </View>
@@ -546,35 +650,26 @@ export default function HomeScreen({ navigation }) {
           )}
         </View>
       </ScrollView>
-
-      {/* Floating Action Button */}
-      <Pressable
-        style={styles.fab}
-        onPress={() => {
-          if (!navigation?.navigate) {
-            showToast("error", "Navigation unavailable");
-            return;
-          }
-          navigation.navigate("AskQuestion");
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Ask a question"
-      >
-        <Text style={styles.fabText}>+ Ask</Text>
-      </Pressable>
     </View>
   );
 }
 
 /* ---------- Enhanced Styles ---------- */
 const styles = StyleSheet.create({
+  // Global/Screen Styles
   screen: {
     flex: 1,
-
-    paddingTop: PAGE_TOP_OFFSET,
+    // Background color is handled globally, so no background color here
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 120, // More padding to ensure FAB doesn't hide content
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: Surfaces.border,
+    marginHorizontal: CONTENT_HORIZONTAL_PADDING,
+    marginBottom: 32,
+    opacity: 0.5,
   },
 
   /* Loading State */
@@ -582,11 +677,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#F8FAFC", // Match global background for loading state
   },
   loadingText: {
     marginTop: 16,
     fontSize: 18,
-    color: "#fff",
+    color: EDU_COLORS.textPrimary, // Better contrast
     fontWeight: "600",
   },
   loadingIndicator: {
@@ -595,37 +691,40 @@ const styles = StyleSheet.create({
 
   /* Base Card Styles */
   blurCard: {
-    borderRadius: RADIUS,
+    borderRadius: CORNER_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Surfaces.border,
     backgroundColor: "transparent",
     overflow: "hidden",
   },
   card: {
+    // Kept the original Card styles as a fallback/pattern
     backgroundColor: Surfaces.solid,
-    borderRadius: RADIUS,
+    borderRadius: CORNER_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Surfaces.border,
-    padding: 16,
+    padding: CARD_HORIZONTAL_PADDING,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08, // Reduced shadow for a lighter feel
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
       },
       android: {
-        elevation: 4,
+        elevation: 3,
       },
     }),
   },
 
   /* Header Section */
   headerCard: {
+    // Header is fixed to the top area outside the main scroll
     marginHorizontal: CONTENT_HORIZONTAL_PADDING,
-    marginBottom: 16,
+    paddingTop: 16, // Use paddingTop instead of hardcoded PAGE_TOP_OFFSET
+    paddingBottom: 16,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    paddingVertical: CARD_VERTICAL_PADDING,
+    // Removed marginBottom to integrate better with the scroll area below
   },
   headerContent: {
     flexDirection: "row",
@@ -634,65 +733,68 @@ const styles = StyleSheet.create({
   },
   headerTextContainer: {
     flex: 1,
+    marginRight: 12,
   },
   welcomeText: {
-    fontSize: 26,
+    fontSize: 24, // Slightly smaller for better fit
     color: EDU_COLORS.textPrimary,
     fontWeight: "800",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
     color: EDU_COLORS.textSecondary,
-    fontWeight: "600",
+    fontWeight: "500", // Lighter weight for hierarchy
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 16, // Increased gap
   },
   notificationButton: {
     position: "relative",
-    padding: 8,
+    padding: 6, // Reduced padding for better alignment
   },
   notificationIcon: {
-    fontSize: 22,
+    fontSize: 24, // Larger icon
     color: EDU_COLORS.textPrimary,
   },
   notificationBadge: {
     position: "absolute",
-    top: 2,
-    right: 2,
+    top: -2,
+    right: -2,
     backgroundColor: EDU_COLORS.error,
-    borderRadius: 8,
+    borderRadius: 9,
     minWidth: 18,
     height: 18,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 4, // Added padding for better look with "99+"
   },
   badgeText: {
     color: "#fff",
     fontSize: 10,
     fontWeight: "700",
-    textAlign: "center",
   },
-  avatar: {
+  avatarContainer: {
     width: 44,
     height: 44,
     borderRadius: 22,
     overflow: "hidden",
+    borderWidth: 2, // Highlight avatar
+    borderColor: EDU_COLORS.primary,
   },
   avatarFallback: {
     width: "100%",
     height: "100%",
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: Surfaces.solid, // Light background for fallback
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
-    color: "#fff",
+    color: EDU_COLORS.textPrimary, // Better contrast
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: 18,
   },
   avatarImage: {
     width: "100%",
@@ -702,9 +804,10 @@ const styles = StyleSheet.create({
   /* Status Card */
   statusCard: {
     marginHorizontal: CONTENT_HORIZONTAL_PADDING,
-    marginBottom: 24,
+    marginBottom: 32, // More space
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    paddingVertical: CARD_VERTICAL_PADDING,
+    paddingVertical: 20, // Increased vertical padding
+    backgroundColor: Surfaces.solid,
   },
   statusContent: {
     flexDirection: "row",
@@ -715,66 +818,64 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusRole: {
-    fontSize: 12,
+    fontSize: 14, // Larger role text
     color: EDU_COLORS.primary,
     fontWeight: "800",
-    marginBottom: 2,
+    marginBottom: 4,
     textTransform: "uppercase",
   },
   statusGrade: {
-    fontSize: 14,
-    color: EDU_COLORS.textSecondary,
+    fontSize: 18, // Larger grade text
+    color: EDU_COLORS.textPrimary,
     fontWeight: "700",
   },
   pointsContainer: {
-    alignItems: "center",
-    marginHorizontal: 16,
+    alignItems: "flex-end", // Align text to the right
+    marginLeft: 24,
   },
   pointsLabel: {
     fontSize: 12,
     color: EDU_COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 2,
+    fontWeight: "600",
   },
   pointsValue: {
-    fontSize: 22,
+    fontSize: 32, // Very prominent points value
     color: EDU_COLORS.primary,
-    fontWeight: "800",
-  },
-  logoutButton: {
-    backgroundColor: EDU_COLORS.error,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  logoutText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 12,
+    fontWeight: "900", // Extra bold
   },
 
   /* Section Styles */
   section: {
-    marginBottom: 32,
     paddingHorizontal: CONTENT_HORIZONTAL_PADDING,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 16,
   },
   sectionTextContainer: {
     flex: 1,
+    marginRight: 12,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22, // Bigger title
     fontWeight: "800",
     color: EDU_COLORS.textPrimary,
     marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: EDU_COLORS.textSecondary,
+  },
+  viewAllButton: {
+    paddingVertical: 4,
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: EDU_COLORS.primary,
+    fontWeight: "700",
   },
 
   /* Encouragements */
@@ -784,14 +885,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    backgroundColor: PALETTE_60_30_10.accent10, // Distinct background
   },
   encouragementMessage: {
     flex: 1,
-    color: PALETTE_60_30_10.accent60,
+    color: EDU_COLORS.textPrimary,
     fontWeight: "600",
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
   },
   deleteButton: {
     backgroundColor: EDU_COLORS.error,
@@ -810,45 +912,61 @@ const styles = StyleSheet.create({
 
   /* Classrooms */
   classroomScrollContent: {
-    paddingRight: CONTENT_HORIZONTAL_PADDING,
-    gap: 16,
+    paddingHorizontal: 0, // No horizontal padding here, handled by section
+    paddingRight: CONTENT_HORIZONTAL_PADDING, // Padding for the last item
+    gap: 14, // Slightly less gap
+  },
+  classroomCardWrapper: {
+    width: SCREEN_WIDTH * 0.75, // Wider cards for better content display
+    marginLeft: 0,
+    // First card needs left margin, others don't, but ScrollView handles this with gap
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   classroomCard: {
-    width: SCREEN_WIDTH * 0.7,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    paddingVertical: CARD_VERTICAL_PADDING,
+    paddingVertical: CARD_VERTICAL_PADDING + 4,
+    backgroundColor: Surfaces.solid,
   },
   classroomContent: {
-    gap: 12,
+    gap: 10,
   },
   classroomTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
+    fontSize: 20, // Bigger title
+    fontWeight: "900",
+    color: EDU_COLORS.primary,
   },
   classroomStats: {
     flexDirection: "row",
     alignItems: "center",
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: EDU_COLORS.textSecondary,
-  },
-  viewButton: {
-    alignSelf: "flex-start",
-    backgroundColor: Buttons.primaryBg,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  viewButtonText: {
-    color: Buttons.accentText,
-    fontWeight: "800",
     fontSize: 13,
+    color: EDU_COLORS.textSecondary,
+    fontWeight: "500",
+  },
+  classroomViewCta: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: "700",
+    color: EDU_COLORS.primary,
   },
   emptyClassroomsCard: {
     padding: 24,
     alignItems: "center",
+    backgroundColor: Surfaces.solid,
+    marginHorizontal: 0,
   },
   emptyClassroomsText: {
     color: EDU_COLORS.textSecondary,
@@ -856,24 +974,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  /* Answer CTA */
+  /* Answer CTA (View All) */
   answerCta: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: Buttons.primaryBg,
+    backgroundColor: Buttons.primaryBg, // Using secondary for "View All"
+    borderWidth: 1,
+    borderColor: Buttons.primaryBg,
   },
   answerCtaText: {
-    color: Buttons.accentText,
+    color: Buttons.primaryText, // Primary color text for secondary button
     fontWeight: "800",
     fontSize: 13,
   },
 
   /* Questions & Answers */
   questionCard: {
-    marginBottom: 12,
+    marginBottom: 10,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: CARD_VERTICAL_PADDING,
+    backgroundColor: Surfaces.solid,
   },
   questionHeader: {
     flexDirection: "row",
@@ -885,61 +1006,73 @@ const styles = StyleSheet.create({
     backgroundColor: PALETTE_60_30_10.accent10,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 4,
   },
   questionBadgeText: {
     color: "#fff",
     fontSize: 10,
     fontWeight: "700",
+    textTransform: "uppercase",
   },
   questionDate: {
-    fontSize: 11,
+    fontSize: 12,
     color: EDU_COLORS.textSecondary,
+    fontWeight: "500",
   },
   questionText: {
-    fontSize: 15,
+    fontSize: 16,
     color: EDU_COLORS.textPrimary,
-    fontWeight: "600",
-    lineHeight: 20,
+    fontWeight: "700",
+    lineHeight: 22,
   },
+
+  // Recent Solutions
   answerCard: {
-    marginBottom: 12,
+    marginBottom: 10,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: CARD_VERTICAL_PADDING,
+    backgroundColor: Surfaces.solid,
   },
   answerPressable: {
     paddingVertical: 4,
+    paddingBottom: 8, // Added space for hint
   },
   answerQuestion: {
     fontWeight: "700",
     color: EDU_COLORS.textPrimary,
-    fontSize: 15,
-    lineHeight: 20,
-    marginBottom: 4,
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: 6,
   },
   expandHint: {
-    fontSize: 12,
+    fontSize: 13,
     color: EDU_COLORS.primary,
-    fontStyle: "italic",
+    fontStyle: "normal", // Removed italic
+    fontWeight: "600",
   },
   answersList: {
-    marginTop: 12,
-    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Surfaces.border,
+    gap: 12,
   },
   solutionCard: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: Surfaces.faint, // Lighter background for nested card
     padding: 12,
     borderRadius: 8,
+    borderLeftWidth: 3, // Accent stripe
+    borderLeftColor: PALETTE_60_30_10.accent60,
   },
   solutionText: {
     color: EDU_COLORS.textPrimary,
     fontSize: 14,
-    lineHeight: 18,
+    lineHeight: 20,
     marginBottom: 8,
   },
   solutionFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   solutionAuthor: {
     fontSize: 12,
@@ -949,52 +1082,114 @@ const styles = StyleSheet.create({
   solutionDate: {
     fontSize: 12,
     color: EDU_COLORS.textSecondary,
+    fontWeight: "500",
   },
 
   /* Empty States */
   emptyState: {
     alignItems: "center",
     padding: 32,
+    backgroundColor: Surfaces.solid,
   },
   emptyIcon: {
-    fontSize: 32,
+    fontSize: 36,
     marginBottom: 12,
   },
   emptyText: {
     fontWeight: "700",
     color: EDU_COLORS.textPrimary,
-    fontSize: 16,
+    fontSize: 18,
     marginBottom: 4,
   },
   emptySubtext: {
     color: EDU_COLORS.textSecondary,
     fontSize: 14,
+    textAlign: "center",
   },
 
-  /* Floating Action Button */
+  /* Floating Action Button (FAB) */
   fab: {
     position: "absolute",
-    bottom: 84,
+    bottom: 30, // Lowered FAB to sit above common tab bars
     right: 24,
     backgroundColor: Buttons.primaryBg,
-    borderRadius: 28,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    borderRadius: 30, // Larger radius
+    paddingHorizontal: 28,
+    paddingVertical: 18,
     ...Platform.select({
       ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.25,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 8 },
+        shadowColor: EDU_COLORS.primary,
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 5 },
       },
       android: {
-        elevation: 8,
+        elevation: 10,
       },
     }),
   },
   fabText: {
     color: "#fff",
     fontWeight: "800",
-    fontSize: 16,
+    fontSize: 17,
+  },
+  loadingCenterWrap: {
+    width: "100%",
+    minHeight: 220,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* Card that matches EduLink surface language (no blur) */
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#1F2937",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  loadingFullscreenCenter: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  loadingTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: EDU_COLORS.textPrimary ?? "#0B1220",
+    textAlign: "center",
+  },
+
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS?.gray200 ?? "#E5E7EB",
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  progressBarIndeterminate: {
+    width: 80, // the moving “pill”
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: Buttons?.primaryBg ?? "#2563EB",
   },
 });

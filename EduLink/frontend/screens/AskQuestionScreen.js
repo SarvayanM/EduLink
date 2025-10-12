@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Dimensions,
   Platform,
 } from "react-native";
 import { TextInput, Button } from "react-native-paper";
@@ -16,10 +17,34 @@ import {
   EDU_COLORS,
   Surfaces,
   Buttons,
-  PALETTE_60_30_10,
+  TextColors,
+  // PALETTE_60_30_10 is not used in the final styles, so it's commented out for cleanliness
 } from "../theme/colors";
 import { BlurView } from "expo-blur";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const CORNER_RADIUS = 16;
+const CONTENT_HORIZONTAL_PADDING = 20;
+const CARD_HORIZONTAL_PADDING = 18; // Increased slightly for more breathing room
+const CARD_VERTICAL_PADDING = 18;
+const paperTheme = {
+  /* ... simplified theme structure for style usage ... */
+  shadows: {
+    light: {
+      shadowColor: EDU_COLORS.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    medium: {
+      shadowColor: EDU_COLORS.shadow,
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 8,
+    },
+  },
+};
 
 const SUBJECTS = ["Math", "Science", "English", "History", "Geography"];
 const CLASSROOMS = [
@@ -31,15 +56,28 @@ const CLASSROOMS = [
   "Grade 11",
 ];
 
-const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
+// Re-usable Blur Card component
+const BlurCard = ({
+  children,
+  style,
+  intensity = 45,
+  tint = "systemMaterialLight",
+}) => (
+  // Increased intensity for better blur effect on a light background
   <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
     {children}
   </BlurView>
 );
 
-const PAGE_TOP_OFFSET = 24;
+const PAGE_TOP_OFFSET = 0;
+
+/**
+ * Custom hook for showing a Toast message, ensuring it sits correctly
+ * below the top navigation bar.
+ */
 function useToast() {
   const insets = useSafeAreaInsets();
+  // Adjust top offset to clear the safe area and the navigation bar
   const topOffset = insets.top + NAVBAR_HEIGHT + 8;
 
   return React.useCallback(
@@ -140,170 +178,185 @@ export default function AskQuestionScreen({ navigation }) {
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      {/* Header card */}
-      <BlurCard style={[styles.chatBubble]}>
-        <Text style={styles.title}>Ask a Question</Text>
+      {/* Header card (visual appeal, outside the main form for separation) */}
+      <BlurCard style={styles.headerCard}>
+        <Text style={styles.title}>Ask a Question 🙋‍♀️</Text>
         <Text style={styles.subtitle}>
-          Be clear and specific for faster help.
+          Be clear and specific for faster, better help.
         </Text>
         {/* Subtle decorative halo with requested overlay color */}
         <View style={styles.halo} />
       </BlurCard>
 
-      {/* Form card */}
-      <BlurCard style={[styles.chatBubble]}>
-        {/* Title */}
-        <TextInput
-          mode="outlined"
-          label="Question Title *"
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Write a concise, clear question"
-          maxLength={180}
-          style={styles.paperInput}
-          outlineStyle={styles.outlineStyle}
-          contentStyle={styles.contentStyle}
-          placeholderTextColor={EDU_COLORS.gray500}
-          selectionColor={EDU_COLORS.secondary}
-          cursorColor={EDU_COLORS.primary}
-          returnKeyType="next"
-          theme={{
-            colors: {
-              primary: EDU_COLORS.primary,
-              onSurfaceVariant: EDU_COLORS.gray600,
-            },
-          }}
-        />
-        <View style={styles.helperRow}>
-          <Text style={styles.helperText}>
-            Tip: Include key terms (e.g., “factor,” “photosynthesis”).
-          </Text>
-          <Text style={styles.counterText}>{title.length}/180</Text>
-        </View>
+      {/* Main Form Card */}
 
-        {/* Description */}
-        <TextInput
-          mode="outlined"
-          label="Description (optional)"
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Add context, show your work, and say where you’re stuck…"
-          multiline
-          numberOfLines={6}
-          maxLength={800}
-          style={[styles.paperInput, styles.paperTextarea]}
-          outlineStyle={styles.outlineStyle}
-          contentStyle={[styles.contentStyle, { textAlignVertical: "top" }]}
-          placeholderTextColor={EDU_COLORS.gray500}
-          selectionColor={EDU_COLORS.secondary}
-          cursorColor={EDU_COLORS.primary}
-          theme={{
-            colors: {
-              primary: EDU_COLORS.primary,
-              onSurfaceVariant: EDU_COLORS.gray600,
-            },
-          }}
-        />
-        <View style={styles.helperRow}>
-          <Text style={styles.helperText}>Add formulas, steps you tried.</Text>
-          <Text style={styles.counterText}>{description.length}/800</Text>
-        </View>
+      {/* Title Input */}
+      <TextInput
+        mode="outlined"
+        label="Question Title *"
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Write a concise, clear question"
+        maxLength={180}
+        style={styles.paperInput}
+        outlineStyle={styles.outlineStyle}
+        contentStyle={styles.contentStyle}
+        placeholderTextColor={EDU_COLORS.gray500}
+        selectionColor={EDU_COLORS.secondary}
+        cursorColor={EDU_COLORS.primary}
+        returnKeyType="next"
+        theme={{
+          colors: {
+            primary: EDU_COLORS.primary,
+            onSurfaceVariant: EDU_COLORS.gray600,
+          },
+        }}
+      />
+      <View style={styles.helperRow}>
+        <Text style={styles.helperText}>
+          Tip: Include key terms (e.g., “factor,” “photosynthesis”).
+        </Text>
+        <Text style={styles.counterText}>{title.length}/180</Text>
+      </View>
 
-        {/* Subject */}
-        <Text style={styles.label}>Subject</Text>
-        <View style={styles.chipsRow}>
-          {SUBJECTS.map((s) => {
-            const active = subject === s;
-            return (
-              <Pressable
-                key={s}
-                onPress={() => setSubject(s)}
-                style={[styles.chip, active && styles.chipActive]}
-                android_ripple={{
-                  color: "rgba(0,0,0,0.06)",
-                  borderless: false,
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`Subject ${s}`}
+      {/* Description Input */}
+      <TextInput
+        mode="outlined"
+        label="Description (optional)"
+        value={description}
+        onChangeText={setDescription}
+        placeholder="Add context, show your work, and say where you’re stuck…"
+        multiline
+        numberOfLines={6}
+        maxLength={800}
+        style={[styles.paperInput, styles.paperTextarea]}
+        outlineStyle={styles.outlineStyle}
+        contentStyle={[styles.contentStyle, { textAlignVertical: "top" }]}
+        placeholderTextColor={EDU_COLORS.gray500}
+        selectionColor={EDU_COLORS.secondary}
+        cursorColor={EDU_COLORS.primary}
+        theme={{
+          colors: {
+            primary: EDU_COLORS.primary,
+            onSurfaceVariant: EDU_COLORS.gray600,
+          },
+        }}
+      />
+      <View style={[styles.helperRow, styles.descHelperRow]}>
+        <Text style={styles.helperText}>Add formulas, steps you tried.</Text>
+        <Text style={styles.counterText}>{description.length}/800</Text>
+      </View>
+
+      {/* Subject Chips */}
+      <Text style={styles.label}>Subject</Text>
+      <View style={styles.chipsRow}>
+        {SUBJECTS.map((s) => {
+          const active = subject === s;
+          return (
+            <Pressable
+              key={s}
+              onPress={() => setSubject(s)}
+              style={[
+                styles.chip,
+                active ? styles.chipActive : styles.chipInactive,
+              ]}
+              android_ripple={{
+                color: "rgba(0,0,0,0.06)",
+                borderless: false,
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={`Subject ${s}`}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  active ? styles.chipTextActive : styles.chipTextInactive,
+                ]}
               >
-                <Text
-                  style={[styles.chipText, active && styles.chipTextActive]}
-                >
-                  {s}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+                {s}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
-        {/* Topic */}
-        <Text style={styles.label}>Topic (Optional)</Text>
-        <TextInput
-          mode="outlined"
-          value={topic}
-          onChangeText={setTopic}
-          placeholder="e.g., Algebra, Photosynthesis"
-          style={styles.paperInput}
-          outlineStyle={styles.outlineStyle}
-          contentStyle={styles.contentStyle}
-          selectionColor={EDU_COLORS.secondary}
-          cursorColor={EDU_COLORS.primary}
-          theme={{
-            colors: {
-              primary: EDU_COLORS.primary,
-              onSurfaceVariant: EDU_COLORS.gray600,
-            },
-          }}
-        />
+      {/* Topic Input */}
+      <Text style={styles.label}>Topic (Optional)</Text>
+      <TextInput
+        mode="outlined"
+        value={topic}
+        onChangeText={setTopic}
+        placeholder="e.g., Algebra, Photosynthesis"
+        style={[styles.paperInput, styles.topicInput]}
+        outlineStyle={styles.outlineStyle}
+        contentStyle={styles.contentStyle}
+        selectionColor={EDU_COLORS.secondary}
+        cursorColor={EDU_COLORS.primary}
+        theme={{
+          colors: {
+            primary: EDU_COLORS.primary,
+            onSurfaceVariant: EDU_COLORS.gray600,
+          },
+        }}
+      />
 
-        {/* Classroom */}
-        <Text style={styles.label}>Classroom</Text>
-        <View style={styles.chipsRow}>
-          {CLASSROOMS.map((c) => {
-            const active = classroom === c;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => setClassroom(c)}
-                style={[styles.chip, active && styles.chipActive]}
-                android_ripple={{
-                  color: "rgba(0,0,0,0.06)",
-                  borderless: false,
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`Classroom ${c}`}
+      {/* Classroom Chips */}
+      <Text style={styles.label}>Classroom</Text>
+      <View style={styles.chipsRow}>
+        {CLASSROOMS.map((c) => {
+          const active = classroom === c;
+          return (
+            <Pressable
+              key={c}
+              onPress={() => setClassroom(c)}
+              style={[
+                styles.chip,
+                active ? styles.chipActive : styles.chipInactive,
+              ]}
+              android_ripple={{
+                color: "rgba(0,0,0,0.06)",
+                borderless: false,
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={`Classroom ${c}`}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  active ? styles.chipTextActive : styles.chipTextInactive,
+                ]}
               >
-                <Text
-                  style={[styles.chipText, active && styles.chipTextActive]}
-                >
-                  {c}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+                {c}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
-        {/* Submit */}
-        <Button
-          mode="contained"
-          onPress={submitQuestion}
-          disabled={busy}
-          style={[styles.cta, busy && styles.ctaDisabled]}
-          labelStyle={styles.ctaText}
-          theme={{
-            colors: {
-              primary: Buttons.primaryBg,
-              onPrimary: Buttons.primaryText,
-            },
-          }}
-        >
-          {busy ? "Posting..." : "Post Question"}
-        </Button>
-      </BlurCard>
+      {/* Submit Button */}
+      <Button
+        mode="contained"
+        onPress={submitQuestion}
+        disabled={busy || !title} // Disable if busy or title is empty
+        style={[
+          styles.cta,
+          (busy || !title) && styles.ctaDisabled, // Apply disabled style
+        ]}
+        labelStyle={styles.ctaText}
+        theme={{
+          colors: {
+            // Ensure the primary color used by the button is the one from Buttons.primaryBg
+            primary: Buttons.primaryBg,
+            onPrimary: Buttons.primaryText,
+          },
+        }}
+      >
+        {busy ? "Posting..." : "Post Question"}
+      </Button>
 
       {/* Local Toast host (ensures messages render on this screen) */}
       <Toast position="top" topOffset={24} visibilityTime={2600} />
@@ -311,130 +364,195 @@ export default function AskQuestionScreen({ navigation }) {
   );
 }
 
+const { width } = Dimensions.get("window");
+const isSmallScreen = width < 375;
+
 /* ===================== Styles (Design-token aligned) ===================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+  // Global Screen Styles
   screen: {
     flex: 1,
-    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
+    paddingTop: PAGE_TOP_OFFSET,
+
+    // Background color is inherited from global, as requested (i.e., not set here)
+  },
+  screenContent: {
+    paddingHorizontal: 20,
+
+    paddingBottom: 64,
   },
 
-  /* Shared blur shell */
   blurCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Surfaces.border,
-    overflow: "hidden",
-    backgroundColor: "transparent",
-  },
-  chatBubble: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: EDU_COLORS.textPrimary,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: EDU_COLORS.gray600,
-    marginTop: 6,
-    fontWeight: "700",
-  },
-
-  /* Form */
-  label: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-
-  /* Paper inputs */
-  paperInput: {
-    backgroundColor: Surfaces.inputBg,
-    borderRadius: 14,
-    marginBottom: 12,
-  },
-  paperTextarea: { minHeight: 130 },
-  outlineStyle: {
-    borderColor: Surfaces.border,
-    borderRadius: 14,
-  },
-  contentStyle: {
-    color: EDU_COLORS.textPrimary,
-    fontSize: 16,
-    textAlignVertical: "top",
-  },
-
-  /* Chips */
-  chipsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 6,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: Surfaces.chipBg,
+    borderRadius: CORNER_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Surfaces.border,
-    minHeight: 40,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "transparent",
+    overflow: "hidden",
   },
-  chipActive: {
-    backgroundColor: Buttons.accentBg,
-    borderColor: Buttons.accentBg,
-  },
-  chipText: {
-    fontSize: 13,
-    color: EDU_COLORS.gray700,
-    fontWeight: "700",
-  },
-  chipTextActive: {
-    color: Buttons.accentText,
-    fontWeight: "900",
-  },
-
-  /* CTA */
-  cta: {
-    marginTop: 18,
-    borderRadius: 14,
-    paddingVertical: 6,
+  card: {
+    // Kept the original Card styles as a fallback/pattern
+    backgroundColor: Surfaces.solid,
+    borderRadius: CORNER_RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Surfaces.border,
+    padding: CARD_HORIZONTAL_PADDING,
     ...Platform.select({
       ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.18,
-        shadowRadius: 8,
+        shadowColor: "#000",
+        shadowOpacity: 0.08, // Reduced shadow for a lighter feel
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
       },
-      android: { elevation: 4 },
+      android: {
+        elevation: 3,
+      },
     }),
   },
-  ctaDisabled: { opacity: 0.7 },
-  ctaText: { fontWeight: "900", letterSpacing: 0.2 },
+
+  // Header Card Styles (Visual Separation and Appeal)
+  headerCard: {
+    // Overrides default BlurCard padding/margin if needed
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    // Slightly more rounded header
+  },
+  title: {
+    fontSize: isSmallScreen ? 24 : 28,
+    fontWeight: "700",
+    color: TextColors.default, // deep neutral for long reading
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: isSmallScreen ? 14 : 16,
+    color: TextColors.muted, // supportive labels
+    fontWeight: "500",
+  },
+  halo: {
+    // Subtle decorative element
+    position: "absolute",
+    top: -10,
+    right: -10,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: EDU_COLORS.primary, // Edu Blue
+    opacity: 0.1,
+    zIndex: -1, // Push it behind the text
+  },
+
+  // Main Form Card Styles
+  formCard: {
+    padding: isSmallScreen ? 20 : 24,
+    backgroundColor: Surfaces.solid, // Matte card
+    borderRadius: 20,
+  },
+
+  // TextInput Styles (React Native Paper)
+  paperInput: {
+    marginBottom: 0, // Remove default spacing since we handle it with helperRow
+    backgroundColor: EDU_COLORS.base, // Paper-like canvas as per 60% dominant rule
+    fontSize: isSmallScreen ? 15 : 16,
+    minHeight: 56, // Standard Paper input height
+  },
+  outlineStyle: {
+    borderRadius: 12, // Match the paperTheme roundness style
+    borderWidth: 1.5,
+    borderColor: EDU_COLORS.gray200, // Soft, neutral border
+  },
+  contentStyle: {
+    paddingHorizontal: 16,
+    color: TextColors.default, // Default text color
+  },
+  paperTextarea: {
+    minHeight: 120, // Taller for description
+    height: "auto", // Ensure multiline works
+  },
+
+  // Helper/Counter Text Styles
   helperRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: -6,
-    marginBottom: 8,
+    marginTop: 4,
+    marginBottom: 16, // Space before next main element
+    paddingHorizontal: 4,
+  },
+  descHelperRow: {
+    marginBottom: 24, // More space after the large textarea
   },
   helperText: {
     fontSize: 12,
-    color: EDU_COLORS.gray600,
-    fontWeight: "600",
+    color: EDU_COLORS.gray500, // Medium gray for non-critical info
   },
   counterText: {
     fontSize: 12,
-    color: EDU_COLORS.gray500,
+    color: EDU_COLORS.gray400, // Lighter gray for counter
+  },
+
+  // Label Text Styles (above chips/inputs)
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: TextColors.default,
+    marginBottom: 8,
+    marginTop: 8, // Added to separate from previous element's helper row
+  },
+
+  // Chip Styles
+  chipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8, // Spacing between chips
+    marginBottom: 24, // Space before the next label/input
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  // Inactive (Default) Chip
+  chipInactive: {
+    backgroundColor: Buttons.chipBg, // EDU_COLORS.gray100
+    borderColor: EDU_COLORS.gray200,
+  },
+  chipTextInactive: {
+    color: Buttons.chipText, // EDU_COLORS.gray600
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  // Active Chip
+  chipActive: {
+    backgroundColor: Buttons.chipActiveBg, // EDU_COLORS.accent
+    borderColor: Buttons.chipActiveBg, // Solid look
+    ...paperTheme.shadows.light, // Slight shadow for selected state
+  },
+  chipTextActive: {
+    color: Buttons.chipActiveText, // #FFFFFF
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // Topic Input specific spacing
+  topicInput: {
+    marginBottom: 24, // Space between topic input and Classroom label
+  },
+
+  // Call-to-Action (CTA) Button
+  cta: {
+    marginTop: 16,
+    height: 52, // Professional button height
+    borderRadius: 12, // Match input rounding
+    justifyContent: "center", // Center text vertically
+    backgroundColor: Buttons.primaryBg, // Primary600 for strong buttons
+  },
+  ctaText: {
+    fontSize: 18,
     fontWeight: "700",
+    color: Buttons.primaryText,
+  },
+  ctaDisabled: {
+    opacity: 0.7,
+    backgroundColor: EDU_COLORS.gray400, // Neutral color for disabled state
   },
 });

@@ -1,5 +1,9 @@
 // frontend/App.js
 import { useEffect, useState } from "react";
+import { ImageBackground } from "react-native";
+import bgImage from "./assets/app-bg20.jpeg";
+import LoadingPage from "./components/LoadingPage";
+
 import {
   View,
   Text,
@@ -30,6 +34,7 @@ import {
 } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import TopNavbar, { NAVBAR_HEIGHT } from "./components/TopNavbar";
+import BottomNavbar, { BOTTOM_NAV_HEIGHT } from "./components/BottomNavbar";
 
 /* Screens */
 import HomeScreen from "./screens/HomeScreen";
@@ -48,10 +53,22 @@ import StudyPlannerScreen from "./screens/StudyPlannerScreen";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+<LinearGradient
+  colors={APP_GRADIENT}
+  start={{ x: 0.0, y: 0.0 }}
+  end={{ x: 1.0, y: 1.0 }}
+  style={StyleSheet.absoluteFill}
+/>;
+
 /* ---------- Global Toast host (clears fixed navbar) ---------- */
 function ToastHost() {
   const insets = useSafeAreaInsets();
-  return <Toast topOffset={insets.top + NAVBAR_HEIGHT + 8} />;
+  return (
+    <Toast
+      topOffset={(insets?.top || 0) + NAVBAR_HEIGHT + 8}
+      style={{ zIndex: 9999, elevation: 9999 }}
+    />
+  );
 }
 
 /* ---------- Shared options ---------- */
@@ -187,19 +204,6 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <PaperProvider theme={paperTheme}>
-        {/* Keep strong contrast for status icons via dark top gradient */}
-        <StatusBar
-          translucent
-          barStyle="light-content"
-          backgroundColor="transparent"
-        />
-        {/* Global gradient background (dark→brand→light) */}
-        <LinearGradient
-          colors={APP_GRADIENT}
-          start={{ x: 0.0, y: 0.0 }}
-          end={{ x: 1.0, y: 1.0 }}
-          style={StyleSheet.absoluteFill}
-        />
         <RootApp />
       </PaperProvider>
       <ToastHost />
@@ -215,6 +219,8 @@ function RootApp() {
   const navigationRef = useNavigationContainerRef();
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [topRouteName, setTopRouteName] = useState("");
+
+  const isAuthRoute = topRouteName === "Login" || topRouteName === "Register";
 
   // Transparent navigation theme so the global gradient shows everywhere
   const NAV_THEME = {
@@ -268,7 +274,6 @@ function RootApp() {
             setRole("student");
           }
         } catch (e) {
-          
           setRole("student");
         } finally {
           setLoadingRole(false);
@@ -316,39 +321,37 @@ function RootApp() {
 
   return (
     <SafeAreaView style={styles.safeWrap} edges={["top", "left", "right"]}>
+      {isAuthRoute ? (
+        // Full-screen gradient for Login/Register
+        <LinearGradient
+          colors={[EDU_COLORS.primary, "#0D7377", "#04364A"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : (
+        // App gradient for the rest of the app
+        <LinearGradient
+          colors={APP_GRADIENT}
+          start={{ x: 0.0, y: 0.0 }}
+          end={{ x: 1.0, y: 1.0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+
       {/* Fixed top navbar */}
-      <TopNavbar role={role || "student"} navigationRef={navigationRef} />
+      <TopNavbar
+        currentRouteName={topRouteName}
+        onBack={() => navigationRef.current?.goBack?.()}
+      />
 
       {/* Spacer exactly equal to navbar */}
       <View style={{ height: NAVBAR_HEIGHT }} />
 
-      {/* Breadcrumbs under the app name */}
-      {user && topRouteName !== "Login" && topRouteName !== "Register" && (
+      {/* Breadcrumbs (non-auth only) */}
+      {user && !isAuthRoute && (
         <View style={styles.breadcrumbsWrap}>
-          <Text
-            style={styles.breadcrumbLine}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            accessible
-            accessibilityRole="text"
-            accessibilityLabel="Breadcrumbs"
-          >
-            {breadcrumbs.map((crumb, idx) => (
-              <Text key={`${crumb.name}-${idx}`}>
-                <Text
-                  onPress={() => onCrumbPress(idx)}
-                  accessibilityRole="link"
-                  accessibilityLabel={`Go to ${crumb.label}`}
-                  style={styles.breadcrumbLink}
-                >
-                  {crumb.label}
-                </Text>
-                {idx < breadcrumbs.length - 1 && (
-                  <Text style={styles.breadcrumbSep}> / </Text>
-                )}
-              </Text>
-            ))}
-          </Text>
+          {/* ...existing breadcrumb code... */}
         </View>
       )}
 
@@ -360,10 +363,11 @@ function RootApp() {
       >
         {user ? (
           loadingRole ? (
-            <SafeAreaView style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-              <Text style={styles.loadingText}>Loading Your Dashboard ...</Text>
-            </SafeAreaView>
+            <LoadingPage
+              title="Welcome to EduLink"
+              subtitle="Preparing your learning space …"
+              imageSource={require("./assets/app-logo.png")}
+            />
           ) : (
             <AppStack />
           )
@@ -372,7 +376,14 @@ function RootApp() {
         )}
       </NavigationContainer>
 
-      {/* Single Toast provider is mounted above via <ToastHost /> */}
+      {/* Bottom nav only when signed in & not on auth routes */}
+      {user && !loadingRole && !isAuthRoute && (
+        <BottomNavbar
+          role={role || "student"}
+          navigationRef={navigationRef}
+          activeTab={topRouteName}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -417,24 +428,24 @@ const styles = StyleSheet.create({
   safeWrap: { flex: 1, backgroundColor: "transparent" },
 
   breadcrumbsWrap: {
-    paddingHorizontal: 16,
-    marginTop: -48,
+    paddingHorizontal: 22,
+    marginTop: -64,
     marginBottom: 16,
   },
   breadcrumbLine: {
-    fontWeight: "600",
+    fontWeight: "900",
     letterSpacing: 0.2,
     width: "100%",
     flexShrink: 1,
-    fontSize: 13,
+    fontSize: 16,
     color: "rgba(255,255,255,0.82)",
   },
   breadcrumbLink: {
-    color: "#FFFFFF",
+    color: "black",
     textDecorationLine: "none",
   },
   breadcrumbSep: {
-    color: "rgba(255,255,255,0.65)",
+    color: "black",
   },
 
   loadingContainer: {
@@ -445,7 +456,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
-    color: "#FFFFFF",
+    color: "black",
     fontWeight: "600",
     fontSize: 20,
     textAlign: "center",

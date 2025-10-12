@@ -1,3 +1,4 @@
+// screens/LoginScreen.js
 import Screen from "../components/Screen";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -21,8 +22,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { auth } from "../services/firebaseAuth";
 import { EDU_COLORS, paperTheme as baseTheme } from "../theme/colors";
+import { NAVBAR_HEIGHT } from "../components/TopNavbar";
 
 /* ---- Palette shortcuts ---- */
 const C = {
@@ -34,7 +37,7 @@ const C = {
 
 const { width, height } = Dimensions.get("window");
 
-/* ---- Paper surfaces transparent so glass inputs look clean ---- */
+/* ---- Paper surfaces transparent for gradient feel ---- */
 const paperTheme = {
   ...baseTheme,
   colors: {
@@ -44,7 +47,6 @@ const paperTheme = {
   },
 };
 
-/* ---- Input theme: white text, refined placeholder ---- */
 const INPUT_THEME = {
   roundness: 16,
   colors: {
@@ -72,16 +74,16 @@ export default function LoginScreen({ route, navigation }) {
 
   const msg = route?.params?.msg;
 
-  // Micro-animations (kept subtle and snappy)
+  // Animations
   const fade = useRef(new Animated.Value(0)).current;
   const slideY = useRef(new Animated.Value(30)).current;
   const btnScale = useRef(new Animated.Value(1)).current;
-  const inputFocusAnim = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const logoRotate = useRef(new Animated.Value(0)).current;
+  const bgAnim = useRef(new Animated.Value(0)).current;
 
+  /* ---- Entry Animations ---- */
   useEffect(() => {
-    // Logo entrance
     Animated.parallel([
       Animated.spring(logoScale, {
         toValue: 1,
@@ -95,10 +97,6 @@ export default function LoginScreen({ route, navigation }) {
         easing: Easing.elastic(1.1),
         useNativeDriver: true,
       }),
-    ]).start();
-
-    // Content entrance
-    Animated.parallel([
       Animated.timing(fade, {
         toValue: 1,
         duration: 700,
@@ -112,7 +110,25 @@ export default function LoginScreen({ route, navigation }) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [fade, slideY, logoScale, logoRotate]);
+
+    // Background shimmer
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bgAnim, {
+          toValue: 1,
+          duration: 4000,
+          easing: Easing.linear,
+          useNativeDriver: false,
+        }),
+        Animated.timing(bgAnim, {
+          toValue: 0,
+          duration: 4000,
+          easing: Easing.linear,
+          useNativeDriver: false,
+        }),
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
     if (msg) showMessage(msg);
@@ -140,24 +156,6 @@ export default function LoginScreen({ route, navigation }) {
       useNativeDriver: true,
     }).start();
 
-  const handleInputFocus = () => {
-    Animated.timing(inputFocusAnim, {
-      toValue: 1,
-      duration: 250,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  };
-
-  const handleInputBlur = () => {
-    Animated.timing(inputFocusAnim, {
-      toValue: 0,
-      duration: 250,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  };
-
   const handleLogin = async () => {
     const mail = (email || "").trim();
     if (!mail || !password)
@@ -170,10 +168,9 @@ export default function LoginScreen({ route, navigation }) {
         await AsyncStorage.setItem("userEmail", u.email ?? mail);
       } catch {}
       showMessage("Login successful! Welcome to EduLink");
-
       // navigation.replace("Home");
     } catch (e) {
-      showMessage("Oops! Login failed");
+      showMessage("Oops! Login failed", true);
     } finally {
       setLoading(false);
     }
@@ -184,22 +181,30 @@ export default function LoginScreen({ route, navigation }) {
     outputRange: ["0deg", "360deg"],
   });
 
+  const bgInterpolation = bgAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"],
+  });
+
   return (
     <PaperProvider theme={paperTheme}>
       <StatusBar translucent barStyle="light-content" />
       <View style={styles.root}>
-        {/* Subtle background pattern */}
-        <View style={styles.backgroundPattern}>
-          {[...Array(20)].map((_, i) => (
-            <View
+        {/* Animated Gradient Background */}
+        {/* Animated Gradient Background (fills behind TopNavbar + safe areas) */}
+
+        {/* Floating dots for educational calm motion */}
+        <View style={styles.bokehLayer}>
+          {[...Array(15)].map((_, i) => (
+            <Animated.View
               key={i}
               style={[
-                styles.patternDot,
+                styles.dot,
                 {
                   top: Math.random() * height,
                   left: Math.random() * width,
-                  opacity: Math.random() * 0.1 + 0.05,
-                  transform: [{ scale: Math.random() * 0.5 + 0.5 }],
+                  opacity: Math.random() * 0.25 + 0.05,
+                  transform: [{ scale: Math.random() * 1.2 + 0.5 }],
                 },
               ]}
             />
@@ -213,13 +218,10 @@ export default function LoginScreen({ route, navigation }) {
           <View
             style={[
               styles.content,
-              {
-                paddingTop: 8, // header sits slightly below breadcrumb
-                paddingBottom: Math.max(insets.bottom + 20, 32),
-              },
+              { paddingBottom: Math.max(insets.bottom + 20, 32) },
             ]}
           >
-            {/* Header sits below breadcrumb for clear hierarchy */}
+            {/* Header */}
             <Animated.View
               style={[
                 styles.header,
@@ -230,102 +232,65 @@ export default function LoginScreen({ route, navigation }) {
                     { scale: logoScale },
                     { rotate: logoRotation },
                   ],
-                  marginTop: 12,
                 },
               ]}
             >
-              <View style={styles.logoContainer}>
-                <Text style={styles.appTitle} accessibilityRole="header">
-                  🎓 EduLink
-                </Text>
-              </View>
-              <Text style={styles.appTagline}>
-                Learn together • Grow together
-              </Text>
+              <Text style={styles.appTitle}>🎓 EduLink</Text>
+              <Text style={styles.appTagline}>Empower. Learn. Excel.</Text>
             </Animated.View>
 
             {/* Form */}
             <Animated.View
               style={[
                 styles.form,
-                {
-                  opacity: fade,
-                  transform: [{ translateY: slideY }],
-                },
+                { opacity: fade, transform: [{ translateY: slideY }] },
               ]}
             >
-              <Animated.View style={styles.inputContainer}>
-                <TextInput
-                  mode="outlined"
-                  placeholder="Enter your email address"
-                  value={email}
-                  onChangeText={setEmail}
-                  onFocus={handleInputFocus}
-                  onBlur={handleInputBlur}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  textContentType="emailAddress"
-                  selectionColor={C.white}
-                  cursorColor={C.white}
-                  theme={INPUT_THEME}
-                  style={styles.input}
-                  outlineColor="rgba(255,255,255,0.35)"
-                  activeOutlineColor={C.white}
-                  left={
-                    <TextInput.Icon
-                      icon="email-outline"
-                      color="rgba(255,255,255,0.7)"
-                      size={20}
-                    />
-                  }
-                />
-              </Animated.View>
-
-              <Animated.View style={styles.inputContainer}>
-                <TextInput
-                  mode="outlined"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChangeText={setPassword}
-                  onFocus={handleInputFocus}
-                  onBlur={handleInputBlur}
-                  secureTextEntry={secureTextEntry}
-                  autoComplete="password"
-                  textContentType="password"
-                  selectionColor={C.white}
-                  cursorColor={C.white}
-                  theme={INPUT_THEME}
-                  style={styles.input}
-                  outlineColor="rgba(255,255,255,0.35)"
-                  activeOutlineColor={C.white}
-                  left={
-                    <TextInput.Icon
-                      icon="lock-outline"
-                      color="rgba(255,255,255,0.7)"
-                      size={20}
-                    />
-                  }
-                  right={
-                    <TextInput.Icon
-                      icon={secureTextEntry ? "eye-off" : "eye"}
-                      onPress={() => setSecureTextEntry(!secureTextEntry)}
-                      color="rgba(255,255,255,0.7)"
-                    />
-                  }
-                />
-              </Animated.View>
+              <TextInput
+                mode="outlined"
+                placeholder="Email address"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                theme={INPUT_THEME}
+                style={styles.input}
+                left={
+                  <TextInput.Icon
+                    icon="email-outline"
+                    color="rgba(255,255,255,0.7)"
+                  />
+                }
+              />
+              <TextInput
+                mode="outlined"
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={secureTextEntry}
+                autoComplete="password"
+                theme={INPUT_THEME}
+                style={styles.input}
+                left={
+                  <TextInput.Icon
+                    icon="lock-outline"
+                    color="rgba(255,255,255,0.7)"
+                  />
+                }
+                right={
+                  <TextInput.Icon
+                    icon={secureTextEntry ? "eye-off" : "eye"}
+                    onPress={() => setSecureTextEntry(!secureTextEntry)}
+                    color="rgba(255,255,255,0.7)"
+                  />
+                }
+              />
             </Animated.View>
 
             {/* CTA */}
             <Animated.View
-              style={[
-                styles.btnWrap,
-                {
-                  opacity: fade,
-                  transform: [{ translateY: slideY }, { scale: btnScale }],
-                },
-              ]}
+              style={[styles.btnWrap, { transform: [{ scale: btnScale }] }]}
             >
               <Button
                 mode="contained"
@@ -336,247 +301,123 @@ export default function LoginScreen({ route, navigation }) {
                 contentStyle={styles.buttonContent}
                 style={styles.button}
                 labelStyle={styles.buttonLabel}
-                accessibilityLabel="Sign in to EduLink"
-                disabled={loading}
-                buttonColor={C.secondary}
-                textColor="#FFFFFF"
+                buttonColor="#066A76"
               >
                 {loading ? "Starting ..." : "Start Learning"}
               </Button>
             </Animated.View>
 
             {/* Links */}
-            <Animated.View
-              style={[
-                styles.linksContainer,
-                { opacity: fade, transform: [{ translateY: slideY }] },
-              ]}
-            >
-              <View
-                style={[
-                  styles.linksRow,
-                  { flexDirection: "column", gap: 0, alignItems: "center" },
-                ]}
+            <Animated.View style={[styles.links, { opacity: fade }]}>
+              <Text style={styles.linkText}>
+                New here?{" "}
+                <Text
+                  style={styles.linkHighlight}
+                  onPress={() => navigation.navigate("Register")}
+                >
+                  Join EduLink
+                </Text>
+              </Text>
+              <Text
+                style={styles.linkSub}
+                onPress={() => navigation.navigate("ForgotPassword")}
               >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 4,
-                  }}
-                >
-                  <Text style={{ color: "#EAF8FF" }}>New to EduLink?</Text>
-
-                  <Button
-                    mode="text"
-                    onPress={() => navigation.navigate("Register")}
-                    textColor="#066A76"
-                    compact
-                    labelStyle={[
-                      styles.link,
-                      { fontWeight: "bold", marginLeft: 4 },
-                    ]}
-                  >
-                    Join the Community
-                  </Button>
-                </View>
-                <Button
-                  mode="text"
-                  onPress={() => navigation.navigate("ForgotPassword")}
-                  textColor="#066A76"
-                  compact
-                  labelStyle={styles.link}
-                >
-                  Forgot Password?
-                </Button>
-              </View>
+                Forgot Password?
+              </Text>
             </Animated.View>
 
             {/* Footer */}
-            <Animated.View
-              style={[
-                styles.footer,
-                { opacity: fade, transform: [{ translateY: slideY }] },
-              ]}
-            >
-              <Text style={styles.microcopy}>
-                Secure by Firebase • Privacy-first
+            <Animated.View style={[styles.footer, { opacity: fade }]}>
+              <Text style={styles.footerText}>
+                Powered by Firebase • Built for learners
               </Text>
             </Animated.View>
-          </View>
 
-          {/* Snackbar */}
-          <Snackbar
-            visible={snackbarVisible}
-            onDismiss={() => setSnackbarVisible(false)}
-            duration={4000}
-            style={[
-              styles.snackbar,
-              { backgroundColor: isError ? EDU_COLORS.error : C.secondary },
-            ]}
-            accessibilityLiveRegion="polite"
-            action={{
-              label: "Dismiss",
-              onPress: () => setSnackbarVisible(false),
-              textColor: C.white,
-            }}
-            wrapperStyle={styles.snackbarWrapper}
-          >
-            <Text style={styles.snackbarText}>{message}</Text>
-          </Snackbar>
+            {/* Snackbar */}
+            <Snackbar
+              visible={snackbarVisible}
+              onDismiss={() => setSnackbarVisible(false)}
+              duration={4000}
+              style={[
+                styles.snackbar,
+                { backgroundColor: isError ? EDU_COLORS.error : "#066A76" },
+              ]}
+              action={{
+                label: "Dismiss",
+                onPress: () => setSnackbarVisible(false),
+              }}
+            >
+              <Text style={{ color: "#fff" }}>{message}</Text>
+            </Snackbar>
+          </View>
         </KeyboardAvoidingView>
       </View>
     </PaperProvider>
   );
 }
 
+/* ---- STYLES ---- */
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
-  root: {
-    flex: 1,
-    // Solid brand background (gradient removed)
-  },
+  // root must allow layering behind content
+  root: { flex: 1, position: "relative", backgroundColor: "transparent" },
+
   kav: { flex: 1 },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    alignItems: "stretch",
     justifyContent: "center",
+    alignItems: "stretch",
+    paddingHorizontal: 28,
     gap: 24,
   },
-
-  // Breadcrumb
-  breadcrumbBack: {
-    marginLeft: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  breadcrumbIcon: {
-    fontSize: 18,
-    color: "#EAF8FF",
-    fontWeight: "700",
-    marginRight: 4,
-  },
-  breadcrumbText: {
-    fontSize: 15,
-    color: "#EAF8FF",
-    fontWeight: "700",
-  },
-
-  // Background pattern
-  backgroundPattern: {
-    ...StyleSheet.absoluteFillObject,
-    pointerEvents: "none",
-  },
-  patternDot: {
-    position: "absolute",
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-
-  // Header
-  header: {
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  logoContainer: { marginBottom: 8 },
+  header: { alignItems: "center", marginBottom: 8 },
   appTitle: {
-    color: "#FFFFFF",
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: "900",
-    letterSpacing: -0.5,
-    textAlign: "center",
-    textShadowColor: "rgba(0, 0, 0, 0.1)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    color: "#FFFFFF",
+    textShadowColor: "rgba(0,0,0,0.15)",
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
   },
   appTagline: {
-    color: "rgba(255,255,255,0.82)",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-    letterSpacing: 0.3,
-  },
-
-  // Form
-  form: {
-    gap: 16,
-  },
-  inputContainer: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  input: {
-    borderRadius: 16,
-    fontSize: 16,
-  },
-
-  // Button
-  btnWrap: {
-    marginTop: 8,
-    shadowColor: C.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  buttonContent: { height: 58 },
-  button: { borderRadius: 20 },
-  buttonLabel: {
+    color: "rgba(255,255,255,0.85)",
     fontSize: 17,
-    fontWeight: "800",
+    marginTop: 4,
     letterSpacing: 0.5,
-    color: "#FFFFFF",
   },
-
-  // Links
-  linksContainer: { marginTop: 8 },
-  linksRow: {
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "center",
-    alignItems: "center",
+  input: { borderRadius: 16, fontSize: 16, marginBottom: 8 },
+  btnWrap: {
+    marginTop: 16,
+    shadowColor: "#00A9B8",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
   },
-  link: {
-    color: "#066A76",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-
-  // Footer
+  button: { borderRadius: 20 },
+  buttonContent: { height: 58 },
+  buttonLabel: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
+  links: { alignItems: "center", marginTop: 16 },
+  linkText: { color: "#EAF8FF", fontSize: 15 },
+  linkHighlight: { color: "#00E0C7", fontWeight: "700" },
+  linkSub: { color: "#A9D9E8", marginTop: 4, fontSize: 14 },
   footer: { marginTop: 8 },
-  microcopy: {
+  footerText: {
     textAlign: "center",
-    fontSize: 13,
     color: "#FFFFFF",
     opacity: 0.8,
-    letterSpacing: 0.3,
+    fontSize: 13,
   },
-
-  // Snackbar
-  snackbar: {
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-  snackbarWrapper: {
+  snackbar: { borderRadius: 16, margin: 16 },
+  bokehLayer: { ...StyleSheet.absoluteFillObject },
+  dot: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EAF8FF",
   },
-  snackbarText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: 14,
+  gradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
   },
 });

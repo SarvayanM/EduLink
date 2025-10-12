@@ -13,6 +13,9 @@ import {
   Animated,
   StyleSheet,
   RefreshControl,
+  Keyboard,
+  Dimensions,
+  Alert,
 } from "react-native";
 import {
   TextInput,
@@ -22,6 +25,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -42,6 +46,7 @@ import {
   getDocs,
   orderBy,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
@@ -171,6 +176,12 @@ export default function ClassroomScreen({ route }) {
 
   /* ---------- Refs ---------- */
   const flatListRef = useRef(null);
+  const fadeAnims = useRef({});
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+  const fabScale = useRef(new Animated.Value(1)).current;
+  const modalAnim = useRef(
+    new Animated.Value(Dimensions.get("window").height)
+  ).current;
 
   /* ---------- Effects ---------- */
   useEffect(() => {
@@ -183,15 +194,95 @@ export default function ClassroomScreen({ route }) {
 
   useEffect(() => {
     setQuestions(
-      filterForRoleAndSubject(
-        allQuestions,
-        userRole,
-        userGrade,
-        classroom?.grade,
-        selectedSubject
-      )
+      filterByRoleAndGrade(allQuestions, userRole, userGrade, classroom?.grade)
     );
-  }, [allQuestions, userRole, userGrade, classroom?.grade, selectedSubject]);
+  }, [allQuestions, userRole, userGrade, classroom?.grade]);
+
+  // Auto-scroll to bottom when questions change
+  useEffect(() => {
+    if (questions.length > 0 && flatListRef.current) {
+      setTimeout(() => {
+        try {
+          // For inverted lists, scroll to offset 0 to show latest
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch (error) {
+          console.log("Scroll error (non-critical):", error);
+        }
+      }, 100);
+    }
+  }, [questions]);
+
+  useEffect(() => {
+    const showListener = Keyboard.addListener("keyboardWillShow", (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: e.endCoordinates.height,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    const hideListener = Keyboard.addListener("keyboardWillHide", (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (showQuestionForm) {
+      modalAnim.setValue(Dimensions.get("window").height);
+      Animated.timing(modalAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(modalAnim, {
+        toValue: Dimensions.get("window").height,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showQuestionForm]);
+
+  useEffect(() => {
+    if (showAnswerForm) {
+      modalAnim.setValue(Dimensions.get("window").height);
+      Animated.timing(modalAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(modalAnim, {
+        toValue: Dimensions.get("window").height,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showAnswerForm]);
+
+  useEffect(() => {
+    if (showMyQuestions) {
+      modalAnim.setValue(Dimensions.get("window").height);
+      Animated.timing(modalAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(modalAnim, {
+        toValue: Dimensions.get("window").height,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showMyQuestions]);
 
   /* ---------- Firestore ---------- */
   const fetchUser = async () => {
@@ -233,7 +324,7 @@ export default function ClassroomScreen({ route }) {
   };
 
   /* ---------- Helpers ---------- */
-  const filterForRoleAndSubject = (list, role, grade, clsGrade, subject) => {
+  const filterByRoleAndGrade = (list, role, grade, clsGrade) => {
     const filterGrade = clsGrade || grade;
     let out = list;
     if ((role === "student" || role === "tutor") && filterGrade) {
@@ -241,7 +332,6 @@ export default function ClassroomScreen({ route }) {
     } else if (role === "teacher" && clsGrade) {
       out = out.filter((q) => q.grade === clsGrade);
     }
-    if (subject) out = out.filter((q) => q.subject === subject);
     return out;
   };
 
@@ -267,6 +357,12 @@ export default function ClassroomScreen({ route }) {
       showToast("error", "Please type a question or attach an image.");
       return;
     }
+
+    if (!selectedSubject) {
+      showToast("error", "Select subject to send");
+      return;
+    }
+
     try {
       const questionGrade = classroom?.grade || userGrade;
 
@@ -274,7 +370,7 @@ export default function ClassroomScreen({ route }) {
         title: (questionTitle || "").trim(),
         question: question.trim(),
         image: selectedImage,
-        subject: selectedSubject || "Other",
+        subject: selectedSubject,
         askedBy: auth.currentUser.uid,
         askedByEmail: auth.currentUser.email,
         askedByName: userName,
@@ -294,23 +390,58 @@ export default function ClassroomScreen({ route }) {
       showToast("success", "Your question was posted!");
 
       await fetchAllQuestions();
+
+      // Auto-scroll to bottom to show the new question
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch (error) {
+          console.log("Scroll error (non-critical):", error);
+        }
+      }, 300);
     } catch {
       showToast("error", "Failed to post question.");
     }
   };
 
   const submitAnswer = async () => {
+    console.log("=== SUBMIT ANSWER STARTED ===");
+    console.log("Answer text:", answer);
+    console.log("Selected question:", selectedQuestionItem);
+    console.log("Current user:", auth.currentUser?.uid);
+    console.log("User name:", userName);
+
     if (!answer.trim()) {
+      console.log("❌ Empty answer detected");
       showToast("error", "Please enter your answer.");
       return;
     }
+
+    if (!selectedQuestionItem) {
+      console.error("❌ No question selected!");
+      showToast("error", "No question selected.");
+      return;
+    }
+
+    if (!auth.currentUser) {
+      console.error("❌ No authenticated user!");
+      showToast("error", "Please log in to submit answers.");
+      return;
+    }
+
+    if (!userName) {
+      console.error("❌ No username available!");
+      showToast("error", "User name not loaded. Please refresh and try again.");
+      return;
+    }
+
     try {
       const qRef = doc(db, "questions", selectedQuestionItem.id);
       const newAnswer = {
         answer: answer.trim(),
         answeredBy: auth.currentUser.uid,
         answeredByName: userName,
-        createdAt: serverTimestamp(),
+        createdAt: new Date(),
         upvotes: 0,
       };
       const updatedAnswers = [
@@ -319,6 +450,7 @@ export default function ClassroomScreen({ route }) {
       ];
 
       await updateDoc(qRef, { answers: updatedAnswers, status: "answered" });
+      console.log("✅ Question document updated successfully!");
 
       // +5 points and auto-promotion
       const meRef = doc(db, "users", auth.currentUser.uid);
@@ -348,72 +480,136 @@ export default function ClassroomScreen({ route }) {
           )}${(selectedQuestionItem.question || "").length > 50 ? "..." : ""}”`,
           questionId: selectedQuestionItem.id,
           read: false,
-          createdAt: serverTimestamp(),
+          createdAt: new Date(),
         });
       } catch {}
 
       setAnswer("");
       setShowAnswerForm(false);
       setSelectedQuestionItem(null);
+      console.log("✅ UI state cleared successfully!");
       showToast("success", "Answer submitted! (+5 points)");
 
+      console.log("Refreshing questions list...");
       await fetchAllQuestions();
-    } catch {
-      showToast("error", "Failed to submit answer.");
+      console.log("✅ Questions refreshed successfully!");
+
+      // Auto-scroll to bottom to show the updated question/answer
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch (error) {
+          console.log("Scroll error (non-critical):", error);
+        }
+      }, 300);
+    } catch (error) {
+      console.error("Error submitting answer:", error);
+      showToast(
+        "error",
+        "Failed to submit answer",
+        error.message || "Unknown error"
+      );
     }
   };
 
+  const handleRateAnswer = async (
+    questionId,
+    answerIndex,
+    rating,
+    answeredBy
+  ) => {
+    try {
+      // Update question with rating
+      const questionRef = doc(db, "questions", questionId);
+      const questionDoc = await getDoc(questionRef);
+      if (questionDoc.exists()) {
+        const questionData = questionDoc.data();
+        const updatedAnswers = [...questionData.answers];
+        updatedAnswers[answerIndex] = {
+          ...updatedAnswers[answerIndex],
+          rating: rating,
+          ratedBy: auth.currentUser.uid,
+        };
+
+        await updateDoc(questionRef, {
+          answers: updatedAnswers,
+        });
+
+        // Update user points
+        const userRef = doc(db, "users", answeredBy);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const currentPoints = userData.points || 0;
+          const newPoints = currentPoints + rating;
+
+          await updateDoc(userRef, {
+            points: newPoints,
+          });
+
+          // Check if user should be promoted to tutor
+          if (newPoints >= 200 && userData.role === "student") {
+            await updateDoc(userRef, {
+              role: "tutor",
+            });
+          }
+        }
+
+        showToast(
+          "success",
+          `Rated ${rating} points!`,
+          `Points added to ${updatedAnswers[answerIndex].answeredByName}`
+        );
+        await fetchAllQuestions();
+      }
+    } catch (error) {
+      showToast("error", "Failed to rate answer", error.message);
+    }
+  };
+
+  const handleDeleteQuestion = async (questionId, questionText) => {
+    Alert.alert(
+      "Delete Question",
+      `Are you sure you want to delete this question?\n\n"${questionText.slice(
+        0,
+        100
+      )}${questionText.length > 100 ? "..." : ""}"`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log("Deleting question:", questionId);
+
+              // Delete the question document from Firestore
+              await deleteDoc(doc(db, "questions", questionId));
+
+              showToast("success", "Question deleted successfully");
+
+              // Refresh the questions list
+              await fetchAllQuestions();
+
+              console.log("✅ Question deleted and list refreshed");
+            } catch (error) {
+              console.error("Error deleting question:", error);
+              showToast("error", "Failed to delete question", error.message);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   /* ---------- Renderers ---------- */
-  const Header = () => (
-    <View style={styles.headerWrap}>
-      <View style={styles.headerRow}>
-        <View style={styles.titleCol}>
-          <Text style={styles.title}>
-            {classroom?.title ||
-              `${(userRole || "Student").slice(0, 1).toUpperCase()}${(
-                userRole || "student"
-              )
-                .slice(1)
-                .toLowerCase()} Dashboard`}
-          </Text>
-          <Text style={styles.subtitle}>
-            Learn together{"\n"}Grow together 🎯
-          </Text>
-        </View>
-
-        <BlurCard style={styles.nameTagBlur}>
-          {userRole === "tutor" ? (
-            <Text style={styles.tutorBadgeText}>🎓 TUTOR</Text>
-          ) : (
-            <Text style={styles.nameText}>{userName}</Text>
-          )}
-        </BlurCard>
-      </View>
-    </View>
-  );
-
   const SubjectRail = () =>
     (userRole === "student" || userRole === "tutor") && (
       <View>
-        {/* Edge fades */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={["rgba(255,255,255,0.0)", "rgba(255,255,255,0.85)"]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[
-            styles.edgeFade,
-            { left: 0, transform: [{ rotateY: "180deg" }] },
-          ]}
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={["rgba(255,255,255,0.0)", "rgba(255,255,255,0.85)"]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[styles.edgeFade, { right: 0 }]}
-        />
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -425,7 +621,7 @@ export default function ClassroomScreen({ route }) {
             return (
               <Pressable
                 key={subject}
-                onPress={() => setSelectedSubject(active ? null : subject)}
+                onPress={() => setSelectedSubject(subject)}
                 style={({ pressed }) => [
                   styles.chip,
                   active && styles.chipActive,
@@ -437,7 +633,7 @@ export default function ClassroomScreen({ route }) {
                 }}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`Filter by ${subject}`}
+                accessibilityLabel={`Select ${subject} for posting`}
                 accessibilityState={{ selected: active }}
               >
                 <Text
@@ -490,6 +686,14 @@ export default function ClassroomScreen({ route }) {
             onPress={() =>
               setExpandedQuestion(expandedQuestion === q.id ? null : q.id)
             }
+            onLongPress={
+              isMine
+                ? () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    handleDeleteQuestion(q.id, q.question);
+                  }
+                : undefined
+            }
             accessibilityRole="button"
           >
             {q.image ? (
@@ -538,6 +742,9 @@ export default function ClassroomScreen({ route }) {
             <View style={styles.chatMetaRow}>
               <Text style={styles.chatMeta}>
                 {q.status} • 💬 {q.answers?.length || 0}
+                {isMine && (
+                  <Text style={styles.longPressHint}> • Hold to delete</Text>
+                )}
               </Text>
               {!isMine && (
                 <GradientButton
@@ -576,17 +783,24 @@ export default function ClassroomScreen({ route }) {
       ref={flatListRef}
       data={questions}
       keyExtractor={(item) => item.id}
+      inverted={true}
       contentContainerStyle={
         questions.length === 0
           ? { flex: 1, paddingHorizontal: 16 }
           : {
-              paddingVertical: 12,
+              paddingTop: 12,
               paddingBottom: INPUT_BAR_HEIGHT + Math.max(insets.bottom, 24),
               paddingHorizontal: 16,
             }
       }
       ListEmptyComponent={<Empty />}
       showsVerticalScrollIndicator={false}
+      bounces={false}
+      overScrollMode="never"
+      maintainVisibleContentPosition={{
+        minIndexForVisible: 0,
+        autoscrollToTopThreshold: 10,
+      }}
       refreshControl={
         <RefreshControl
           tintColor={EDU_COLORS.primary}
@@ -701,69 +915,125 @@ export default function ClassroomScreen({ route }) {
   return (
     <PaperProvider theme={paperTheme}>
       <Screen>
-        {/* Header */}
-        <Header />
-
-        {/* Subject rail */}
-        {userRole && <SubjectRail />}
-
         {/* Content */}
         {renderContent()}
 
-        {/* Composer (Students/Tutors) */}
-        {(userRole === "student" || userRole === "tutor") && (
-          <View>
-            {selectedImage && (
-              <View style={styles.imagePreview}>
-                <Image
-                  source={{ uri: selectedImage }}
-                  style={styles.previewImage}
-                />
-                <Pressable
-                  style={styles.removeImageBtn}
-                  onPress={() => setSelectedImage(null)}
-                >
-                  <Text style={styles.removeImageText}>×</Text>
-                </Pressable>
+        <View>
+          {/* Subject rail - moved above chatbox */}
+          {userRole && <SubjectRail />}
+
+          {/* Subject Selection Bar */}
+          {(userRole === "student" || userRole === "tutor") &&
+            selectedSubject && (
+              <View style={styles.subjectSelectionBar}>
+                <View style={styles.subjectTag}>
+                  <Text style={styles.subjectTagText}>{selectedSubject}</Text>
+                  <Pressable
+                    style={styles.subjectTagClose}
+                    onPress={() => setSelectedSubject(null)}
+                  >
+                    <Text style={styles.subjectTagCloseText}>×</Text>
+                  </Pressable>
+                </View>
               </View>
             )}
 
-            <BlurCard
-              style={[
-                styles.inputBar,
-                { paddingBottom: Math.max(insets.bottom, 12) },
-              ]}
-            >
+          {/* Main Input Bar */}
+          <View
+            style={[
+              styles.inputBar,
+              { paddingBottom: Math.max(insets.bottom, 8) },
+            ]}
+          >
+            <View style={styles.chatInputContainer}>
+              {/* Attachment Button */}
               <Pressable
                 style={styles.imageButton}
                 onPress={pickImage}
                 accessibilityRole="button"
               >
-                <Text style={styles.imageButtonText}>📷</Text>
+                <Text style={styles.imageButtonText}>+</Text>
               </Pressable>
 
-              <TextInput
-                mode="outlined"
-                theme={INPUT_THEME}
-                style={styles.inputField}
-                placeholder="Ask a question…"
-                value={question}
-                onChangeText={setQuestion}
-                multiline
-                outlineColor={EDU_COLORS.primary + "33"}
-                activeOutlineColor={EDU_COLORS.primary}
-                placeholderTextColor={EDU_COLORS.placeholder}
-              />
+              {/* Text Input */}
+              <View style={styles.textInputContainer}>
+                <TextInput
+                  mode="flat"
+                  theme={{
+                    ...INPUT_THEME,
+                    colors: {
+                      ...INPUT_THEME.colors,
+                      background: "transparent",
+                      primary: EDU_COLORS.primary,
+                      text: "#000000",
+                      placeholder: EDU_COLORS.gray500,
+                    },
+                  }}
+                  style={styles.inputField}
+                  contentStyle={styles.inputContent}
+                  placeholder="Select subject and Ask..."
+                  value={question}
+                  onChangeText={setQuestion}
+                  multiline
+                  numberOfLines={1} // Start with single line
+                  maxLength={500}
+                  underlineColor="transparent"
+                  activeUnderlineColor="transparent"
+                  placeholderTextColor={EDU_COLORS.gray500}
+                  autoCorrect={true}
+                  autoCapitalize="sentences"
+                />
+              </View>
 
-              <GradientButton
-                title="➤"
+              {/* Send Button */}
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  question.trim() && selectedSubject
+                    ? styles.sendButtonActive
+                    : styles.sendButtonInactive,
+                ]}
                 onPress={postQuestion}
-                style={styles.sendButton}
-                textStyle={styles.sendButtonText}
-              />
-            </BlurCard>
+                accessibilityRole="button"
+              >
+                <Text style={styles.sendButtonText}>↑</Text>
+              </Pressable>
+            </View>
+
+            {/* Character Count */}
+            {question.length > 0 && (
+              <Text
+                style={[
+                  styles.characterCount,
+                  {
+                    color:
+                      question.length > 450
+                        ? EDU_COLORS.error
+                        : EDU_COLORS.gray500,
+                  },
+                ]}
+              >
+                {question.length}/500
+              </Text>
+            )}
           </View>
-        )}
+
+          {/* Image Preview */}
+          {selectedImage && (
+            <View style={styles.imagePreview}>
+              <Image
+                source={{ uri: selectedImage }}
+                style={styles.previewImage}
+              />
+              <Pressable
+                style={styles.removeImageBtn}
+                onPress={() => setSelectedImage(null)}
+              >
+                <Text style={styles.removeImageText}>×</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
 
         {/* Draggable FAB */}
         <Animated.View
@@ -792,14 +1062,19 @@ export default function ClassroomScreen({ route }) {
         {/* Ask Modal */}
         <Modal
           visible={showQuestionForm}
-          animationType="fade"
+          animationType="none"
           transparent
           statusBarTranslucent
           presentationStyle="overFullScreen"
           onRequestClose={() => setShowQuestionForm(false)}
         >
           <View style={styles.centeredOverlay}>
-            <View style={styles.centeredCard}>
+            <Animated.View
+              style={[
+                styles.centeredCard,
+                { transform: [{ translateY: modalAnim }] },
+              ]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Ask a Question</Text>
                 <Pressable
@@ -893,7 +1168,7 @@ export default function ClassroomScreen({ route }) {
                   </Pressable>
                 </View>
               </ScrollView>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
 
@@ -1050,9 +1325,39 @@ export default function ClassroomScreen({ route }) {
                               <Text style={styles.answerText}>
                                 {ans.answer}
                               </Text>
-                              <Text style={styles.answerMeta}>
-                                By {ans.answeredByName}
-                              </Text>
+                              <View style={styles.answerMetaRow}>
+                                <Text style={styles.answerMeta}>
+                                  By {ans.answeredByName}
+                                </Text>
+                                {ans.rating ? (
+                                  <Text style={styles.ratedText}>
+                                    Rated: ⭐{ans.rating}
+                                  </Text>
+                                ) : (
+                                  q.askedBy === auth.currentUser?.uid && (
+                                    <View style={styles.ratingButtons}>
+                                      {[5, 10, 15, 20, 25].map((rating) => (
+                                        <Pressable
+                                          key={rating}
+                                          style={styles.ratingBtn}
+                                          onPress={() =>
+                                            handleRateAnswer(
+                                              q.id,
+                                              index,
+                                              rating,
+                                              ans.answeredBy
+                                            )
+                                          }
+                                        >
+                                          <Text style={styles.ratingText}>
+                                            ⭐{rating}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  )
+                                )}
+                              </View>
                             </View>
                           ))}
                         </View>
@@ -1108,304 +1413,325 @@ export default function ClassroomScreen({ route }) {
 
 /* ===================== Styles ===================== */
 const styles = StyleSheet.create({
-  /* ---------------- Root ---------------- */
-  container: {
-    flex: 1,
-    paddingHorizontal: 16, // align with header rails
-    paddingTop: 60,
-  },
+  content: { flex: 1 },
 
-  /* ---------------- Header ---------------- */
-  headerWrap: {
-    marginTop: -16,
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  titleCol: { flex: 1 },
-  title: { fontSize: 24, fontWeight: "700", color: "black" },
-  subtitle: { marginTop: 2, fontSize: 13.5, color: "black", opacity: 0.9 },
-  nameTagBlur: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    maxWidth: 160,
-    marginTop: 0,
-    borderColor: EDU_COLORS.borderLight,
-  },
-  tutorBadgeText: {
-    color: "#fff",
-    fontWeight: "700",
-    letterSpacing: 0.2,
-    backgroundColor: Buttons.successBg,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  nameText: { color: EDU_COLORS.textPrimary, fontWeight: "600" },
-
-  /* ---------- Subject Rail (chips) ---------- */
-  subjectBar: {
-    alignSelf: "stretch",
-    width: "100%",
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 8, // tighter padding; content has its own gap
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    overflow: "hidden", // keep blur neat; edge fades sit above
-    position: "relative",
-  },
-  subjectScrollTop: undefined, // REMOVE min/max height from the old style
-
-  chipsRow: {
-    paddingHorizontal: 8,
-    alignItems: "center", // keeps chips vertically centered
-    gap: 8,
-    minHeight: 44, // consistent touch height without forcing tall rail
-  },
-
-  chip: {
-    paddingHorizontal: 14,
-    height: 36, // firm chip height
-    borderRadius: 18,
-    backgroundColor: EDU_COLORS.gray100,
-    borderWidth: 1,
-    borderColor: EDU_COLORS.gray200,
-    justifyContent: "center",
-  },
-  chipActive: {
-    backgroundColor: Buttons.accentBg,
-    borderColor: Buttons.accentBg,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 2 },
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  chipPressed: {
-    opacity: 0.9,
-  },
-  chipText: {
-    fontSize: 13.5,
-    fontWeight: "700",
-    color: EDU_COLORS.gray700,
-  },
-  chipTextActive: {
-    color: Buttons.accentText,
-  },
-
-  /* ---------------- Content ---------------- */
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-
-  /* ---------------- Empty / Loading ---------------- */
   loaderWrap: {
     flex: 1,
-    gap: 12,
-    justifyContent: "center",
     alignItems: "center",
-    paddingBottom: INPUT_BAR_HEIGHT + 12,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 12,
   },
-  loaderText: { color: EDU_COLORS.gray600 },
+
+  /* ---------- Blur Card (shared) ---------- */
+  blurCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Surfaces.border,
+    padding: 12,
+    overflow: "hidden",
+  },
+
+  /* ---------- Subject Chips Rail ---------- */
+  chipsRow: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+    backgroundColor: EDU_COLORS.gray50,
+  },
+  chipActive: {
+    backgroundColor: Buttons.chipActiveBg,
+    borderColor: EDU_COLORS.accent,
+  },
+  chipPressed: { opacity: 0.9 },
+  chipText: {
+    fontSize: 13,
+    color: EDU_COLORS.textPrimary,
+    fontWeight: "600",
+  },
+  chipTextActive: {
+    color: Buttons.chipActiveText,
+  },
+
+  /* ---------- Empty State ---------- */
   emptyState: {
     flex: 1,
-    paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
+    paddingVertical: 24,
   },
   emptyStateText: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     color: EDU_COLORS.textPrimary,
   },
-  emptyStateSubtext: { color: EDU_COLORS.gray600, marginBottom: 12 },
-  ctaAsk: { alignSelf: "center", minWidth: 180 },
-
-  /* ---------------- Chat List & Bubble ---------------- */
-  chatContainer: { marginHorizontal: 0, marginVertical: 6 },
-  myQuestionContainer: { alignItems: "flex-end" },
-  othersQuestionContainer: { alignItems: "flex-start" },
-  blurCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Surfaces.border,
-    overflow: "hidden",
-    padding: 12,
-    backgroundColor: "transparent",
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: EDU_COLORS.gray600,
+    marginBottom: 10,
   },
-  chatBubble: { maxWidth: "88%" },
-  questionImage: {
-    width: "100%",
-    height: 180,
+  ctaAsk: {
+    marginTop: 8,
     borderRadius: 12,
-    marginBottom: 8,
   },
-  textStrong: { color: EDU_COLORS.textPrimary },
-  chatTitleText: {
-    fontSize: 15.5,
-    fontWeight: "700",
+
+  /* ---------- Chat List & Bubbles ---------- */
+  chatContainer: {
+    width: "100%",
+    marginBottom: 12,
+  },
+  myQuestionContainer: {
+    alignItems: "flex-end",
+  },
+  othersQuestionContainer: {
+    alignItems: "flex-start",
+  },
+
+  chatNameLabel: {
+    fontSize: 12,
+    color: EDU_COLORS.gray600,
     marginBottom: 4,
-    color: EDU_COLORS.textPrimary,
+    marginLeft: 6,
   },
+
+  chatBubble: {
+    maxWidth: "90%",
+    padding: 12,
+  },
+
+  chatTitleText: {
+    fontSize: 15,
+    color: EDU_COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  textStrong: { fontWeight: "800" },
+
   chatQuestionText: {
-    fontSize: 14.5,
+    fontSize: 15,
     lineHeight: 20,
     color: EDU_COLORS.textPrimary,
   },
 
-  /* ---------------- Subject Pills ---------------- */
   subjectPill: {
     alignSelf: "flex-start",
+    marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
-    marginTop: 8,
+    borderRadius: 12,
     borderWidth: 1,
   },
   mySubjectPill: {
-    backgroundColor: "#EFF6FF",
-    borderColor: Buttons.outlineBorder,
+    backgroundColor: Buttons.subtleBg,
+    borderColor: EDU_COLORS.gray200,
   },
   othersSubjectPill: {
-    backgroundColor: "#EFF6FF",
-    borderColor: Buttons.secondaryBorder || Buttons.outlineBorder,
+    backgroundColor: Buttons.chipActiveBg,
+    borderColor: EDU_COLORS.accent,
   },
-  subjectPillText: { fontSize: 12.5, fontWeight: "700" },
-  mySubjectPillText: { color: Buttons.accentBg },
-  othersSubjectPillText: { color: Buttons.accentBg },
+  subjectPillText: { fontSize: 12, fontWeight: "700" },
+  mySubjectPillText: { color: Buttons.subtleText },
+  othersSubjectPillText: { color: Buttons.chipActiveText },
 
-  /* ---------------- Chat Meta ---------------- */
-  chatNameLabel: {
-    fontSize: 12,
-    color: EDU_COLORS.gray600,
-    marginLeft: 8,
-    marginBottom: 4,
-  },
   chatMetaRow: {
-    marginTop: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
+    marginTop: 10,
   },
-  chatMeta: { fontSize: 12.5, color: EDU_COLORS.gray600 },
+  chatMeta: {
+    fontSize: 12,
+    color: EDU_COLORS.gray600,
+  },
+  longPressHint: { color: EDU_COLORS.gray500 },
 
-  /* ---------------- Answer Section ---------------- */
   answerBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 12,
-    minHeight: 36,
-    paddingHorizontal: 10,
-    justifyContent: "center",
+    backgroundColor: EDU_COLORS.primary,
   },
   answerBtnLabel: {
-    color: Buttons.primaryText,
-    fontSize: 13,
+    color: "#FFFFFF",
     fontWeight: "800",
-    letterSpacing: 0.2,
+    fontSize: 12,
   },
-  chatAnswersSection: { marginTop: 10, gap: 8 },
+
+  chatAnswersSection: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.gray100,
+    paddingTop: 10,
+    gap: 8,
+  },
   chatAnswerCard: {
-    padding: 10,
-    borderRadius: 12,
     backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: EDU_COLORS.gray200,
+    padding: 10,
   },
-  chatAnswerText: { color: EDU_COLORS.textPrimary },
-  chatAnswerMeta: { marginTop: 4, fontSize: 12, color: EDU_COLORS.gray600 },
-
-  /* ---------------- Sections ---------------- */
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "800",
+  chatAnswerText: {
+    fontSize: 14,
     color: EDU_COLORS.textPrimary,
-    marginLeft: 0,
-  },
-  childCard: { marginHorizontal: 0 },
-  activityCard: { marginHorizontal: 0, marginTop: 6 },
-  digestCard: { marginHorizontal: 0, marginTop: 6 },
-  childName: { fontWeight: "700", color: EDU_COLORS.textPrimary },
-  childGrade: { color: EDU_COLORS.gray700 },
-  childPoints: { color: EDU_COLORS.gray700 },
-  childRank: { color: EDU_COLORS.gray700 },
-  activityText: { color: EDU_COLORS.textPrimary },
-  digestText: { color: EDU_COLORS.textPrimary },
-
-  /* ---------------- Input Bar ---------------- */
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: INPUT_BAR_HEIGHT,
-    marginHorizontal: 0,
     marginBottom: 4,
   },
+  chatAnswerMeta: {
+    fontSize: 12,
+    color: EDU_COLORS.gray600,
+    fontStyle: "italic",
+  },
+
+  /* ---------- Subject Selection Bar (Tag) ---------- */
+  subjectSelectionBar: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.gray100,
+  },
+  subjectTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: EDU_COLORS.accent,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  subjectTagText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  subjectTagClose: {
+    marginLeft: 8,
+    width: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 9,
+    backgroundColor: EDU_COLORS.accent600,
+  },
+  subjectTagCloseText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+
+  /* ---------- Composer / Input Bar ---------- */
+  inputBar: {
+    width: "100%",
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.borderLight,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  chatInputContainer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 8,
+  },
+
   imageButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
-    backgroundColor: EDU_COLORS.secondary,
+    borderRadius: 22,
+    backgroundColor: EDU_COLORS.primary,
     justifyContent: "center",
     alignItems: "center",
-  },
-  imageButtonText: { fontSize: 20, color: EDU_COLORS.textPrimary },
-  inputField: { flex: 1, borderRadius: 16 },
-  sendButton: {
-    minWidth: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sendButtonText: { color: "#fff", fontSize: 16, fontWeight: "800" },
-
-  /* Gradient button (shared) */
-  gradientBtn: {
-    minHeight: 44,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  gradientBtnText: {
-    color: "#fff",
-    fontWeight: "800",
-    letterSpacing: 0.2,
-    fontSize: 14,
-  },
-
-  /* ---------------- Image Preview ---------------- */
-  imagePreview: {
-    marginHorizontal: 0,
-    marginTop: 8,
+    marginRight: 12,
     marginBottom: 2,
-    position: "relative",
-    alignSelf: "flex-start",
-    paddingLeft: 16, // keep aligned with rails
   },
-  previewImage: { width: 120, height: 80, borderRadius: 10 },
+  imageButtonText: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 24,
+  },
+
+  textInputContainer: {
+    flex: 1,
+    maxHeight: 150,
+    borderRadius: 22,
+    backgroundColor: EDU_COLORS.gray50,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+    overflow: "hidden",
+  },
+  inputField: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 150,
+    backgroundColor: "transparent",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  inputContent: {
+    paddingTop: 0,
+    paddingBottom: 0,
+    margin: 0,
+  },
+
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginLeft: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 2,
+    ...paperTheme.shadows.light,
+  },
+  sendButtonActive: { backgroundColor: EDU_COLORS.primary },
+  sendButtonInactive: { backgroundColor: EDU_COLORS.gray200 },
+  sendButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 20,
+  },
+
+  characterCount: {
+    alignSelf: "flex-end",
+    fontSize: 12,
+    marginTop: -2,
+    marginBottom: 8,
+    marginRight: 10,
+  },
+
+  /* ---------- Image Preview (composer) ---------- */
+  imagePreview: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 12,
+    backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+    gap: 12,
+  },
+  previewImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+  },
   removeImageBtn: {
     position: "absolute",
-    top: -8,
-    right: -8,
+    top: 6,
+    right: 6,
     width: 24,
     height: 24,
     borderRadius: 12,
@@ -1413,181 +1739,227 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  removeImageText: { color: "#fff", fontWeight: "800" },
+  removeImageText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
 
-  /* ---------------- FAB ---------------- */
-  fab: { position: "absolute", right: 18 },
-  fabPressable: {
+  /* ---------- Draggable FAB ---------- */
+  fab: {
+    position: "absolute",
+    right: 20,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Buttons.accentBg,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+    backgroundColor: EDU_COLORS.primary,
+    ...paperTheme.shadows.medium,
   },
-  fabText: { color: "#fff", fontSize: 22 },
+  fabPressable: { flex: 1, justifyContent: "center", alignItems: "center" },
+  fabText: { fontSize: 24, lineHeight: 26, color: "#FFFFFF" },
 
-  /* ---------------- Modals ---------------- */
-  modalKav: {
-    width: "100%",
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
+  /* ---------- Modals Base ---------- */
   centeredOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // updated overlay
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
   },
   centeredCard: {
-    width: "92%",
-    maxHeight: "82%",
-    backgroundColor: Surfaces.solid,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Surfaces.border,
-    overflow: "hidden",
+    width: "100%",
+    maxHeight: "85%",
+    backgroundColor: EDU_COLORS.surfaceSolid,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    ...paperTheme.shadows.medium,
   },
   modalHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Surfaces.border,
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: EDU_COLORS.gray100,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
     color: EDU_COLORS.textPrimary,
-    flex: 1,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: EDU_COLORS.gray100,
+    width: 32,
+    height: 32,
     justifyContent: "center",
     alignItems: "center",
-  },
-  closeButtonText: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: EDU_COLORS.gray700,
-  },
-  modalBody: { maxHeight: "74%", padding: 16 },
-
-  /* Ask / Answer form bits that were referenced */
-  questionInput: { marginBottom: 12 },
-  subjectSection: { marginTop: 6, marginBottom: 6 },
-  fieldLabel: { color: EDU_COLORS.gray700, fontWeight: "700", marginBottom: 8 },
-  subjectButtons: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  subjectButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    backgroundColor: Buttons.chipBg,
-    borderWidth: 1,
-    borderColor: Buttons.outlineBorder,
-  },
-  subjectText: { color: Buttons.chipText, fontWeight: "700" },
-  activeSubject: {
-    backgroundColor: Buttons.chipActiveBg,
-    borderColor: "transparent",
-  },
-  activeSubjectText: { color: Buttons.chipActiveText, fontWeight: "800" },
-
-  buttonRow: { flexDirection: "row", gap: 10, marginTop: 8 },
-  askButton: { flex: 1, borderRadius: 16 },
-  submitButton: { flex: 1, borderRadius: 16 },
-  secondaryBtn: {
-    flex: 1,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Buttons.outlineBorder,
-    backgroundColor: Buttons.subtleBg,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
+    backgroundColor: EDU_COLORS.gray100,
   },
+  closeButtonText: { color: EDU_COLORS.gray700, fontSize: 22, lineHeight: 24 },
+  modalBody: { paddingHorizontal: 16, paddingTop: 16 },
 
-  /* Answer preview */
-  questionPreview: {
-    padding: 12,
-    borderRadius: 12,
+  /* ---------- Ask Modal ---------- */
+  questionInput: {
+    marginBottom: 12,
+    fontSize: 16,
     backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: EDU_COLORS.gray200,
-    marginBottom: 10,
   },
-  previewLabel: {
-    color: EDU_COLORS.gray600,
-    marginBottom: 4,
-    fontWeight: "700",
-  },
-  previewText: { color: EDU_COLORS.textPrimary },
-  answerInput: { marginTop: 8 },
-
-  /* My Questions modal list */
-  questionCard: {
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Surfaces.border,
-    marginBottom: 12,
-  },
-  questionTitle: {
-    fontWeight: "700",
-    color: EDU_COLORS.textPrimary,
-    marginBottom: 2,
-  },
-  questionText: { color: EDU_COLORS.textPrimary },
-  readOnlyText: { marginTop: 4, color: EDU_COLORS.gray600 },
-  answersSection: { marginTop: 10, gap: 10 },
-  answersTitle: {
+  subjectSection: { marginTop: 6, marginBottom: 16 },
+  fieldLabel: {
+    fontSize: 14,
     fontWeight: "800",
     color: EDU_COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  subjectButtons: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  subjectButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: Buttons.subtleBg,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+  },
+  activeSubject: {
+    backgroundColor: Buttons.chipActiveBg,
+    borderColor: EDU_COLORS.accent,
+  },
+  subjectText: { color: Buttons.subtleText, fontWeight: "600" },
+  activeSubjectText: { color: Buttons.chipActiveText, fontWeight: "800" },
+
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  askButton: { flex: 1, borderRadius: 12 },
+  secondaryBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: EDU_COLORS.gray100,
+    alignItems: "center",
+  },
+
+  /* ---------- Answer Modal ---------- */
+  questionPreview: {
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: EDU_COLORS.primary,
+  },
+  previewLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: EDU_COLORS.primary,
+    marginBottom: 4,
+  },
+  previewText: { fontSize: 15, color: EDU_COLORS.textPrimary },
+  answerInput: {
+    minHeight: 160,
+    fontSize: 16,
+    backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+  },
+  submitButton: { flex: 1, borderRadius: 12 },
+
+  /* ---------- History Modal ---------- */
+  questionCard: {
+    marginBottom: 12,
+    padding: 14,
+    backgroundColor: EDU_COLORS.surfaceSolid,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray200,
+  },
+  questionImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  questionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  questionText: {
+    fontSize: 15,
+    color: EDU_COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  questionMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.gray100,
+  },
+  readOnlyText: { fontSize: 12.5, color: EDU_COLORS.gray600 },
+
+  answersSection: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.gray200,
+    gap: 8,
+  },
+  answersTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: EDU_COLORS.primary600,
     marginBottom: 2,
   },
   answerCard: {
     padding: 10,
-    borderRadius: 12,
     backgroundColor: EDU_COLORS.gray50,
-    borderWidth: 1,
-    borderColor: EDU_COLORS.gray200,
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: EDU_COLORS.secondary,
   },
-  answerText: { color: EDU_COLORS.textPrimary },
-  answerMeta: { color: EDU_COLORS.gray600, fontSize: 12.5, marginTop: 4 },
+  answerText: { fontSize: 14, color: EDU_COLORS.textPrimary, marginBottom: 6 },
+  answerMetaRow: { flexDirection: "row", justifyContent: "space-between" },
+  answerMeta: { fontSize: 12, color: EDU_COLORS.gray600, fontStyle: "italic" },
+  ratedText: { fontSize: 13, fontWeight: "800", color: EDU_COLORS.accent700 },
+  ratingButtons: { flexDirection: "row", gap: 6 },
+  ratingBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: EDU_COLORS.accent,
+  },
+  ratingText: { fontSize: 12, color: "#FFFFFF", fontWeight: "800" },
 
-  /* Fullscreen image */
+  /* ---------- Fullscreen Image ---------- */
   imageModalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // updated overlay
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
     justifyContent: "center",
     alignItems: "center",
   },
   imageModalClose: {
     position: "absolute",
     right: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: EDU_COLORS.error,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 2,
   },
-  imageModalCloseText: { color: "#fff", fontWeight: "800", fontSize: 18 },
-  fullscreenImage: {
-    width: "92%",
-    height: "70%",
-    borderRadius: 16,
-    resizeMode: "contain",
-  },
+  imageModalCloseText: { color: "#FFFFFF", fontSize: 24, lineHeight: 24 },
+  fullscreenImage: { width: "100%", height: "100%" },
 });

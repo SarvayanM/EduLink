@@ -9,6 +9,8 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  Modal,
+  Animated,
 } from "react-native";
 import {
   TextInput,
@@ -73,6 +75,8 @@ function useToast() {
   );
 }
 
+// after other useState hooks
+
 export default function StudyPlannerScreen() {
   const showToast = useToast();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -101,6 +105,34 @@ export default function StudyPlannerScreen() {
   const [sessionSubject, setSessionSubject] = useState("");
   const [sessionDescription, setSessionDescription] = useState("");
   const [sessionDuration, setSessionDuration] = useState("60");
+
+  const [trackW, setTrackW] = useState(0);
+  const barAnim = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!loading) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(barAnim, {
+          toValue: 1,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(barAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [loading, barAnim]);
+
+  const barTranslate = barAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-80, Math.max(trackW - 80, 0)], // width-aware
+  });
 
   const subjects = [
     "Math",
@@ -131,8 +163,22 @@ export default function StudyPlannerScreen() {
     return () => t && clearInterval(t);
   }, [activeSession, isPaused]);
 
+  useEffect(() => {
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  async function refreshAll() {
+    try {
+      setLoading(true);
+      await Promise.all([fetchTasks(true), fetchStudySessions(true)]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   /* -------------------- Data -------------------- */
-  const fetchTasks = async () => {
+  const fetchTasks = async (skipLoadingToggle = false) => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -169,11 +215,10 @@ export default function StudyPlannerScreen() {
     } catch (e) {
       console.error("fetchTasks", e);
     } finally {
-      setLoading(false);
     }
   };
 
-  const fetchStudySessions = async () => {
+  const fetchStudySessions = async (skipLoadingToggle = false) => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -245,7 +290,7 @@ export default function StudyPlannerScreen() {
       setShowAddTask(false);
       fetchTasks();
 
-      showToast("success", "Task added"`For ${formatDate(selectedDate)} ✅`);
+      showToast("success", "Task added", `For ${formatDate(selectedDate)} `);
     } catch (e) {
       console.error("addTask", e);
       showToast("error", "Failed to add task");
@@ -383,18 +428,27 @@ export default function StudyPlannerScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-        <Text
-          style={{
-            fontSize: 20,
-            color: "white",
-            fontWeight: "600",
-            textAlign: "center",
-          }}
-        >
-          Loading Your Study Planner …
-        </Text>
+      <SafeAreaView style={styles.loadingFullscreenCenter}>
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+          <Text style={styles.loadingTitle}>Loading Your Study Planner…</Text>
+          <Text style={styles.loadingSubtitle}>
+            Fetching today’s tasks and sessions
+          </Text>
+
+          {/* Indeterminate progress bar */}
+          <View
+            style={styles.progressTrack}
+            onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+          >
+            <Animated.View
+              style={[
+                styles.progressBarIndeterminate,
+                { transform: [{ translateX: barTranslate }] },
+              ]}
+            />
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -893,8 +947,25 @@ const styles = StyleSheet.create({
   /* Overlay for dialogs (requested color) */
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    zIndex: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.75)", // deep slate w/ 75% alpha
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+  },
+
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS.gray200,
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  progressBarIndeterminate: {
+    width: 80,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: Buttons.primaryBg,
   },
 
   /* BlurCard base + tidy rails */
@@ -1191,12 +1262,54 @@ const styles = StyleSheet.create({
   prChip: { borderRadius: 12 },
   prChipText: { fontSize: 12, fontWeight: "800", color: EDU_COLORS.gray700 },
 
-  /* Loading */
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: {
-    fontSize: 20,
-    color: "white",
-    fontWeight: "600",
+  loadingFullscreenCenter: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: EDU_COLORS.surfaceSolid,
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#1F2937",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  loadingTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: EDU_COLORS.textPrimary ?? "#0B1220",
     textAlign: "center",
+  },
+
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS.gray200,
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  progressBar: {
+    width: 80,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS.primary,
   },
 });

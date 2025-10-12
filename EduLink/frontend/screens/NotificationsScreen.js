@@ -30,6 +30,11 @@ import {
 } from "firebase/firestore";
 import { BlurView } from "expo-blur";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+import {
+  EDU_COLORS,
+  Surfaces,
+  Buttons, // (unused in this file — left untouched)
+} from "../theme/colors";
 
 const PAGE_TOP_OFFSET = 24;
 
@@ -66,6 +71,34 @@ export default function NotificationsScreen({ navigation }) {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [questionDetails, setQuestionDetails] = useState(null);
+
+  const barAnim = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (!loading) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(barAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(barAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [loading, barAnim]);
+
+  // Interpolate to slide the bar from left to right
+  const barTranslate = barAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-80, 280], // will be clamped by container width; feels smooth on phones & tablets
+  });
 
   const pan = useRef(new Animated.ValueXY()).current;
   const isDragging = useRef(false);
@@ -222,19 +255,22 @@ export default function NotificationsScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 96 }} // prevent bottom clipping under navbar
       >
         {loading ? (
-          <SafeAreaView style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-            <Text
-              style={{
-                fontSize: 20,
-                color: "white",
-                fontWeight: "600",
-                textAlign: "center",
-              }}
-            >
-              Loading Notifications ...
-            </Text>
-          </SafeAreaView>
+          <View style={styles.loadingCenterWrap}>
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color={EDU_COLORS.primary} />
+              <Text style={styles.loadingTitle}>Loading Notifications ...</Text>
+
+              {/* Indeterminate progress bar */}
+              <View style={styles.progressTrack}>
+                <Animated.View
+                  style={[
+                    styles.progressFill,
+                    { transform: [{ translateX: barTranslate }] },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
         ) : (
           <>
             {notifications.map((notification) => (
@@ -579,5 +615,46 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
+  },
+  /* Centered wrap that respects safe areas and stays inline */
+  loadingCenterWrap: {
+    width: "100%",
+    minHeight: 220,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* Card that matches EduLink surface language (no blur) */
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#1F2937",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  loadingTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: EDU_COLORS.textPrimary ?? "#0B1220",
+    textAlign: "center",
+  },
+
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
+    textAlign: "center",
+    marginBottom: 8,
   },
 });

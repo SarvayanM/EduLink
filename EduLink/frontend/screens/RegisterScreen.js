@@ -1128,9 +1128,10 @@ export default function RegisterScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+  container: { flex: 1, paddingHorizontal: 16 },
   root: {
     flex: 1,
+    paddingTop: -40,
     // Solid brand background (gradient removed)
   },
 

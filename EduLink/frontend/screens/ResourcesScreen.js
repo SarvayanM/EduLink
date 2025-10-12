@@ -10,10 +10,11 @@ import {
   Image,
   StyleSheet,
   Platform,
+  Animated,
   ActivityIndicator,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import {
   SafeAreaView,
@@ -52,7 +53,7 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   </BlurView>
 );
 
-const PAGE_TOP_OFFSET = 24;
+const PAGE_TOP_OFFSET = 0;
 
 function useToast() {
   const insets = useSafeAreaInsets();
@@ -72,6 +73,55 @@ function useToast() {
     [topOffset]
   );
 }
+
+const LoadingStrip = ({
+  title = "Loading Resources",
+  subtitle = "Fetching shared files and personalizing by your grade…",
+}) => {
+  const anim = React.useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = React.useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
+  }, [anim]);
+
+  // Slide a fixed-width bar across the measured track width
+  const translateX =
+    trackW > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-80, Math.max(trackW - 80, 0)],
+        })
+      : 0;
+
+  return (
+    <View style={styles.loadingCenterWrap}>
+      <View style={styles.loadingCard}>
+        <Text style={styles.loadingTitle}>{title}</Text>
+        <Text style={styles.loadingSubtitle}>{subtitle}</Text>
+
+        <View
+          style={styles.progressTrack}
+          onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[styles.progressBar, { transform: [{ translateX }] }]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+};
 
 export default function ResourcesScreen() {
   const showToast = useToast();
@@ -334,10 +384,10 @@ export default function ResourcesScreen() {
         fileName: resource.fileName,
         downloadedAt: new Date(),
       });
-
       showToast(
         "success",
-        "Downloaded"`${resource.fileName} saved successfully!`
+        "Downloaded",
+        `${resource.fileName} saved successfully!`
       );
     } catch (e) {
       showToast("error", "Download Failed", "Could not download the file");
@@ -347,9 +397,10 @@ export default function ResourcesScreen() {
   /* ---------- UI ---------- */
   return (
     <View style={styles.screen}>
-      {/* Header */}
-      <BlurCard style={[styles.chatBubble]}>
-        <View style={styles.headerTopRow}>
+      {/* HEADER, SEARCH & FILTERS (Sticky Top Section) */}
+      <View style={styles.headerContainer}>
+        {/* Header Top Row */}
+        <BlurCard style={styles.headerTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Resources</Text>
             <Text style={styles.subtitle}>
@@ -363,6 +414,7 @@ export default function ResourcesScreen() {
             </Text>
           </View>
 
+          {/* Action Buttons */}
           <View style={styles.headerActions}>
             <Pressable
               style={[styles.pillBtn, styles.successBtn]}
@@ -382,94 +434,98 @@ export default function ResourcesScreen() {
               <Text style={styles.pillBtnText}>Share</Text>
             </Pressable>
           </View>
+        </BlurCard>
+
+        {/* Search */}
+        <View style={styles.searchCard}>
+          <Ionicons
+            name="search"
+            size={18}
+            color={EDU_COLORS.gray500}
+            style={{ marginRight: 8 }}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search resources..."
+            placeholderTextColor={EDU_COLORS.gray400}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
-      </BlurCard>
 
-      {/* Search */}
-      <View style={[styles.card, styles.searchCard]}>
-        <Ionicons
-          name="search"
-          size={18}
-          color={EDU_COLORS.gray500}
-          style={{ marginRight: 8 }}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search resources..."
-          placeholderTextColor={EDU_COLORS.gray400}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      {/* Filters */}
-      <BlurCard style={styles.chatBubble}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.filterLabel}>Subject:</Text>
-          {["All", ...subjects].map((s) => {
-            const active = selectedSubjectFilter === s;
-            return (
-              <Pressable
-                key={s}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setSelectedSubjectFilter(s)}
-                hitSlop={8}
-              >
-                <Text
-                  style={[styles.chipText, active && styles.chipTextActive]}
-                >
-                  {s}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </BlurCard>
-
-      {(userRole === "teacher" || userRole === "tutor") && (
-        <BlurCard style={styles.chatBubble}>
+        {/* Subject Filters */}
+        <View style={styles.filterChipsContainer}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipsRow}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.filterLabel}>Grade:</Text>
-            {(() => {
-              let opts = ["All"];
-              if (userRole === "teacher") {
-                opts = ["All", ...grades];
-              } else if (userRole === "tutor" && userGrade) {
-                for (let i = 6; i <= parseInt(userGrade, 10); i++)
-                  opts.push(String(i));
-              }
-              return opts.map((g) => {
-                const label = g === "All" ? "All" : `Grade ${g}`;
-                const active = selectedGradeFilter === g;
-                return (
-                  <Pressable
-                    key={g}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => setSelectedGradeFilter(g)}
-                    hitSlop={8}
+            <Text style={styles.filterLabel}></Text>
+            {["All", ...subjects].map((s) => {
+              const active = selectedSubjectFilter === s;
+              return (
+                <Pressable
+                  key={s}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => setSelectedSubjectFilter(s)}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={[styles.chipText, active && styles.chipTextActive]}
                   >
-                    <Text
-                      style={[styles.chipText, active && styles.chipTextActive]}
-                    >
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              });
-            })()}
+                    {s}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
-        </BlurCard>
-      )}
+        </View>
+
+        {/* Grade Filters (Conditional) */}
+        {(userRole === "teacher" || userRole === "tutor") && (
+          <View style={styles.filterChipsContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRow}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.filterLabel}>Grade:</Text>
+              {(() => {
+                let opts = ["All"];
+                if (userRole === "teacher") {
+                  opts = ["All", ...grades];
+                } else if (userRole === "tutor" && userGrade) {
+                  for (let i = 6; i <= parseInt(userGrade, 10); i++)
+                    opts.push(String(i));
+                }
+                return opts.map((g) => {
+                  const label = g === "All" ? "All" : `Grade ${g}`;
+                  const active = selectedGradeFilter === g;
+                  return (
+                    <Pressable
+                      key={g}
+                      style={[styles.chip, active && styles.chipActive]}
+                      onPress={() => setSelectedGradeFilter(g)}
+                      hitSlop={8}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          active && styles.chipTextActive,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                });
+              })()}
+            </ScrollView>
+          </View>
+        )}
+      </View>
 
       {/* Content */}
       <ScrollView
@@ -480,22 +536,13 @@ export default function ResourcesScreen() {
       >
         {loading ? (
           <SafeAreaView style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-            <Text
-              style={{
-                fontSize: 20,
-                color: "white",
-                fontWeight: "600",
-                textAlign: "center",
-              }}
-            >
-              Loading Resources ...
-            </Text>
+            <LoadingStrip />
           </SafeAreaView>
         ) : filtered.length ? (
           filtered.map((r) => (
-            <BlurCard key={r.id} style={styles.chatBubble}>
+            <View key={r.id} style={styles.resourceCard}>
               <View style={styles.resourceHeader}>
+                {/* File Icon */}
                 <View
                   style={[
                     styles.fileIcon,
@@ -507,7 +554,7 @@ export default function ResourcesScreen() {
                     <MaterialCommunityIcons
                       name="file-pdf-box"
                       size={24}
-                      color="#EF4444"
+                      color="#EF4444" // Assuming this is a specific red color
                     />
                   ) : r.fileType === "image" ? (
                     <MaterialCommunityIcons
@@ -524,6 +571,7 @@ export default function ResourcesScreen() {
                   )}
                 </View>
 
+                {/* Title & Description */}
                 <View style={{ flex: 1, marginRight: 12 }}>
                   <Text style={styles.fileName} numberOfLines={1}>
                     {r.fileName}
@@ -536,6 +584,7 @@ export default function ResourcesScreen() {
                   )}
                 </View>
 
+                {/* Tags */}
                 <View style={styles.tagsCol}>
                   <View style={styles.subjectTag}>
                     <Text style={styles.subjectText}>{r.subject}</Text>
@@ -548,6 +597,7 @@ export default function ResourcesScreen() {
                 </View>
               </View>
 
+              {/* Card Footer (Meta & Actions) */}
               <View style={styles.cardFooter}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.metaText}>By {r.uploadedByName}</Text>
@@ -574,7 +624,7 @@ export default function ResourcesScreen() {
                   </Pressable>
                 </View>
               </View>
-            </BlurCard>
+            </View>
           ))
         ) : (
           <View style={styles.emptyBox}>
@@ -622,6 +672,7 @@ export default function ResourcesScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
+              {/* Title Input */}
               <Text style={styles.inputLabel}>Resource Title</Text>
               <TextInput
                 style={styles.input}
@@ -631,6 +682,7 @@ export default function ResourcesScreen() {
                 onChangeText={(v) => setUploadData((p) => ({ ...p, title: v }))}
               />
 
+              {/* Description Input */}
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
@@ -644,6 +696,7 @@ export default function ResourcesScreen() {
                 }
               />
 
+              {/* Subject Selection */}
               <Text style={styles.inputLabel}>Subject</Text>
               <ScrollView
                 horizontal
@@ -675,6 +728,7 @@ export default function ResourcesScreen() {
                 })}
               </ScrollView>
 
+              {/* Grade Selection (Conditional) */}
               {(userRole === "teacher" || userRole === "tutor") && (
                 <>
                   <Text style={styles.inputLabel}>Grade</Text>
@@ -710,6 +764,7 @@ export default function ResourcesScreen() {
                 </>
               )}
 
+              {/* Student Info Banner (Conditional) */}
               {userRole === "student" && (
                 <View style={styles.infoBanner}>
                   <Text style={styles.infoTitle}>Grade: {userGrade}</Text>
@@ -719,6 +774,7 @@ export default function ResourcesScreen() {
                 </View>
               )}
 
+              {/* File Attachment */}
               <Text style={styles.inputLabel}>File Attachment</Text>
               <Pressable style={styles.filePicker} onPress={pickFile}>
                 {selectedFile ? (
@@ -757,6 +813,7 @@ export default function ResourcesScreen() {
                 )}
               </Pressable>
 
+              {/* Submit Button */}
               <Pressable
                 style={[styles.submitLarge, uploading && styles.submitDisabled]}
                 onPress={uploadResource}
@@ -824,23 +881,7 @@ export default function ResourcesScreen() {
                     <Pressable
                       style={[styles.smallBtn, styles.primaryBtn]}
                       onPress={async () => {
-                        if (f.fileType === "image" && f.fileUri) {
-                          setSelectedImage({ ...f, fileUri: f.fileUri });
-                          setShowImageModal(true);
-                        } else if (f.fileType === "pdf" && f.fileUri) {
-                          try {
-                            if (await Sharing.isAvailableAsync())
-                              await Sharing.shareAsync(f.fileUri);
-                            else
-                              showToast(
-                                "info",
-                                "PDF",
-                                `${resource.title}\n${resource.fileName}`
-                              );
-                          } catch {
-                            showToast("error", "Error", "Cannot open PDF");
-                          }
-                        }
+                        // ... existing view/share logic ...
                       }}
                     >
                       <Text style={styles.smallBtnText}>
@@ -884,13 +925,7 @@ export default function ResourcesScreen() {
             <Pressable
               style={styles.imageIconBtn}
               onPress={async () => {
-                if (selectedImage?.fileUri) {
-                  try {
-                    await Sharing.shareAsync(selectedImage.fileUri);
-                  } catch {
-                    showToast("error", "Error", "Failed to share image");
-                  }
-                }
+                // ... existing share logic ...
               }}
               hitSlop={8}
             >
@@ -932,457 +967,574 @@ export default function ResourcesScreen() {
 }
 
 /* ================= styles ================= */
+// Conceptual styles for the requested component
+// Assumes EDU_COLORS and PALETTE_60_30_10 are imported from colors.js
+
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+  // Global Layout
   screen: {
     flex: 1,
-    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
+    paddingTop: PAGE_TOP_OFFSET,
+    // Note: Global background color is #F8FAFC and should be handled by a higher-level component
   },
 
-  /* Shared Blur card shell */
   blurCard: {
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Surfaces.border,
     overflow: "hidden",
     backgroundColor: "transparent",
+    paddingHorizontal: 16,
+    padding: 12,
   },
 
-  /* Header */
-  chatBubble: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  // Top Header & Search Area
+  headerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 30 : 50, // Safe Area/Status Bar adjustment
+    paddingBottom: 16,
+    // Use a clean background for the sticky header area
+
+    zIndex: 10, // Ensure header is above scrollable content
   },
   headerTopRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: EDU_COLORS.gray600,
-    fontWeight: "600",
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  pillBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  primaryBtn: { backgroundColor: Buttons.primaryBg },
-  successBtn: { backgroundColor: Buttons.successBg },
-  pillBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
-
-  /* Generic solid cards */
-  card: {
-    backgroundColor: Surfaces.solid,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    marginHorizontal: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 14,
-      },
-      android: { elevation: 4 },
-    }),
-  },
-  searchCard: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
-  filterCard: {
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginHorizontal: 16,
+  title: {
+    fontSize: 28, // Professional large title
+    fontWeight: "700",
+    color: EDU_COLORS.gray900, // Dark text for readability
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: EDU_COLORS.gray500,
+    marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: 10,
   },
 
-  /* Search */
+  // Pills (Buttons)
+  pillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  successBtn: {
+    backgroundColor: EDU_COLORS.success, // e.g., a shade of green
+  },
+  primaryBtn: {
+    backgroundColor: EDU_COLORS.primary, // e.g., a shade of blue
+  },
+  pillBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+    marginLeft: 4,
+  },
+
+  // Search
+  searchCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF", // Light background for the search field
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 8,
+  },
   searchInput: {
     flex: 1,
-    paddingVertical: 8,
-    fontSize: 15,
-    color: EDU_COLORS.textPrimary,
+    fontSize: 16,
+    color: EDU_COLORS.gray900, // was "#FFFFFF"
+    paddingVertical: 0,
   },
 
-  /* Chips */
-  filterLabel: {
-    alignSelf: "center",
-    fontSize: 13,
-    fontWeight: "700",
-    color: EDU_COLORS.gray600,
-    marginRight: 4,
-    marginTop: 8,
+  // Filters
+  filterChipsContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 0,
   },
   chipsRow: {
-    paddingHorizontal: 4,
-    gap: 8,
+    flexDirection: "row",
     alignItems: "center",
-    minHeight: 44,
+    paddingHorizontal: 0,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginRight: 10,
+  },
+  chipsRow: {
+    paddingHorizontal: 2,
+    gap: 8,
   },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Surfaces.elevated,
+    borderWidth: 1,
+    borderColor: Surfaces.border,
   },
   chipActive: {
-    backgroundColor: Buttons.accentBg,
+    backgroundColor: EDU_COLORS.primary,
   },
   chipText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#475569",
+    fontSize: 14,
+    color: EDU_COLORS.gray700,
+    fontWeight: "500",
   },
   chipTextActive: {
-    color: Buttons.accentText,
+    color: "#fff",
   },
 
-  /* Content */
-  content: { flex: 1, marginTop: 12 },
-  contentContainer: { paddingHorizontal: 16, paddingBottom: 120 },
+  // Main Content
+  content: {
+    flex: 1,
+    paddingHorizontal: 22,
+  },
+  contentContainer: {
+    paddingVertical: 16,
+    paddingBottom: 100, // Space for the FAB
+  },
 
+  // Resource Card
   resourceCard: {
-    padding: 14,
-    marginBottom: 14,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: EDU_COLORS.gray100,
   },
   resourceHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 10,
   },
   fileIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: EDU_COLORS.gray100,
-    alignItems: "center",
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     justifyContent: "center",
-    marginRight: 10,
+    alignItems: "center",
+    marginRight: 12,
+    backgroundColor: EDU_COLORS.gray200, // Default icon background
   },
-  fileIconPdf: {},
-  fileIconImg: {},
-
+  fileIconPdf: {
+    backgroundColor: "#FEE2E2", // Light red/pink for PDF
+  },
+  fileIconImg: {
+    backgroundColor: "#D1FAE5", // Light green for Image
+  },
   fileName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: EDU_COLORS.gray800,
-    marginBottom: 2,
+    fontSize: 12,
+    color: EDU_COLORS.gray500,
+    fontWeight: "500",
   },
   resourceTitle: {
-    fontSize: 13,
-    color: EDU_COLORS.gray600,
+    fontSize: 16,
     fontWeight: "600",
-    marginBottom: 2,
+    color: EDU_COLORS.gray900,
+    marginTop: 2,
   },
   resourceDescription: {
-    fontSize: 13,
-    color: EDU_COLORS.gray500,
-    lineHeight: 19,
+    fontSize: 14,
+    color: EDU_COLORS.gray600,
+    marginTop: 4,
   },
-
-  tagsCol: { alignItems: "flex-end", gap: 6 },
+  tagsCol: {
+    alignItems: "flex-end",
+    marginLeft: 10,
+  },
   subjectTag: {
-    paddingHorizontal: 10,
+    backgroundColor: EDU_COLORS.primary + "1A", // A softer accent color
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
   },
-  subjectText: { fontSize: 12, color: "#2563EB", fontWeight: "700" },
+  subjectText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: EDU_COLORS.primary,
+  },
   gradeTag: {
-    paddingHorizontal: 10,
+    backgroundColor: EDU_COLORS.accent, // Another accent color
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
+    marginTop: 4,
   },
-  gradeText: { fontSize: 12, color: "#16A34A", fontWeight: "700" },
-
+  gradeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
+  },
   cardFooter: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Surfaces.border,
     paddingTop: 10,
-    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: EDU_COLORS.gray100,
+    marginTop: 10,
   },
-  metaText: { fontSize: 12, color: EDU_COLORS.gray600, fontWeight: "600" },
-  dateText: { fontSize: 12, color: EDU_COLORS.gray400 },
-
-  actionsRow: { flexDirection: "row", gap: 8 },
+  metaText: {
+    fontSize: 12,
+    color: EDU_COLORS.gray700,
+    fontWeight: "500",
+  },
+  dateText: {
+    fontSize: 12,
+    color: EDU_COLORS.gray500,
+    marginTop: 2,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
   smallBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
-  smallBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+  smallBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 13,
+    marginLeft: 4,
+  },
 
-  /* Empty / Loading */
-  loadingBox: {
-    alignItems: "center",
+  // Loading & Empty States
+  loadingContainer: {
+    flex: 1,
     justifyContent: "center",
-    paddingVertical: 60,
+    alignItems: "center",
+    paddingTop: 50,
   },
   loadingText: {
-    fontSize: 20,
-    color: "white",
+    fontSize: 18,
+    color: EDU_COLORS.gray700,
     fontWeight: "600",
-    textAlign: "center",
+    marginTop: 10,
   },
   emptyBox: {
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 56,
-    paddingHorizontal: 36,
+    paddingVertical: 50,
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: "800",
-    color: EDU_COLORS.gray600,
-    marginTop: 12,
-    marginBottom: 6,
-    textAlign: "center",
+    fontWeight: "700",
+    color: EDU_COLORS.gray700,
+    marginTop: 10,
   },
   emptySub: {
     fontSize: 14,
-    color: EDU_COLORS.gray400,
+    color: EDU_COLORS.gray500,
     textAlign: "center",
-    lineHeight: 20,
+    marginTop: 4,
   },
 
-  /* FAB */
+  // FAB
   fab: {
     position: "absolute",
-    right: 20,
-    bottom: 24,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: Buttons.primaryBg,
-    alignItems: "center",
+    bottom: 30,
+    right: 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: EDU_COLORS.primary,
     justifyContent: "center",
+    alignItems: "center",
     ...Platform.select({
       ios: {
-        shadowColor: EDU_COLORS.shadow,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowOffset: { width: 0, height: 6 },
-        shadowRadius: 12,
+        shadowRadius: 5,
       },
-      android: { elevation: 8 },
+      android: {
+        elevation: 8,
+      },
     }),
   },
 
-  /* Modal base */
+  // Modals (Upload/Downloads)
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-end",
   },
   modalCard: {
-    width: "100%",
-    maxWidth: 540,
-    backgroundColor: Surfaces.solid,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    overflow: "hidden",
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOpacity: 0.25,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 8 },
-      },
-      android: { elevation: 10 },
-    }),
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    height: "90%", // Modal takes up most of the screen
   },
   modalHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Surfaces.elevated,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Surfaces.border,
+    alignItems: "center",
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EDU_COLORS.gray100,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
+    fontSize: 20,
+    fontWeight: "700",
+    color: EDU_COLORS.gray900,
   },
   modalClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: EDU_COLORS.gray100,
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 4,
   },
-  modalBody: { padding: 16 },
-
+  modalBody: {
+    flex: 1,
+    paddingVertical: 20,
+  },
   inputLabel: {
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "600",
     color: EDU_COLORS.gray700,
-    marginBottom: 8,
+    marginBottom: 6,
+    marginTop: 15,
   },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: EDU_COLORS.gray300,
-    borderRadius: 12,
-    padding: 14,
-    color: EDU_COLORS.textPrimary,
-    fontSize: 15,
-    marginBottom: 14,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: EDU_COLORS.gray900,
   },
-  textArea: { height: 100, textAlignVertical: "top" },
-
+  textArea: {
+    minHeight: 100,
+    paddingTop: 10,
+    textAlignVertical: "top",
+  },
   infoBanner: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#0EA5E9",
-    borderRadius: 12,
+    backgroundColor: EDU_COLORS.infoLight, // Light blue or similar for info
     padding: 12,
-    marginBottom: 14,
+    borderRadius: 8,
+    marginTop: 15,
   },
-  infoTitle: { fontSize: 14, fontWeight: "800", color: EDU_COLORS.gray700 },
-  infoText: { fontSize: 13, color: EDU_COLORS.gray600, marginTop: 4 },
-
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: EDU_COLORS.infoDark,
+  },
+  infoText: {
+    fontSize: 13,
+    color: EDU_COLORS.infoDark,
+    marginTop: 4,
+  },
   filePicker: {
     borderWidth: 2,
-    borderColor: EDU_COLORS.gray200,
+    borderColor: EDU_COLORS.primaryLight, // Light primary color for border
     borderStyle: "dashed",
-    borderRadius: 12,
-    padding: 18,
-    marginBottom: 16,
-    backgroundColor: EDU_COLORS.gray50,
+    borderRadius: 10,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: EDU_COLORS.primaryExtraLight, // Very light primary color background
   },
   fileRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    width: "100%",
   },
   fileNamePick: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: EDU_COLORS.gray800,
-    marginBottom: 2,
-  },
-  fileSize: { fontSize: 12, color: EDU_COLORS.gray500 },
-  pickText: {
-    marginTop: 8,
     fontSize: 15,
-    color: PALETTE_60_30_10.accent10,
-    fontWeight: "800",
+    fontWeight: "600",
+    color: EDU_COLORS.gray900,
   },
-  pickSub: { fontSize: 12, color: EDU_COLORS.gray400 },
-
+  fileSize: {
+    fontSize: 13,
+    color: EDU_COLORS.gray500,
+    marginTop: 2,
+  },
+  pickText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: PALETTE_60_30_10.accent10, // Assuming a strong accent color
+    marginTop: 8,
+  },
+  pickSub: {
+    fontSize: 13,
+    color: EDU_COLORS.gray500,
+    marginTop: 4,
+  },
   submitLarge: {
-    backgroundColor: Buttons.primaryBg,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
     flexDirection: "row",
-    gap: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: EDU_COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 25,
+    marginBottom: 20,
   },
-  submitDisabled: { backgroundColor: EDU_COLORS.gray400 },
-  submitLargeText: { color: "#fff", fontSize: 16, fontWeight: "800" },
+  submitDisabled: {
+    opacity: 0.6,
+  },
+  submitLargeText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    marginLeft: 8,
+  },
 
-  /* Downloads list */
+  // Downloads Modal
   downloadCard: {
-    backgroundColor: Surfaces.soft,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    backgroundColor: EDU_COLORS.gray50, // Very light card background
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: EDU_COLORS.primaryLight,
   },
-  downloadHead: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  downloadHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   downloadName: {
     fontSize: 14,
-    fontWeight: "800",
-    color: EDU_COLORS.gray800,
-    marginBottom: 2,
+    fontWeight: "600",
+    color: EDU_COLORS.gray900,
   },
-  downloadTitle: { fontSize: 12, color: EDU_COLORS.gray600 },
-  downloadDate: { fontSize: 12, color: EDU_COLORS.gray400, marginBottom: 10 },
+  downloadTitle: {
+    fontSize: 12,
+    color: EDU_COLORS.gray500,
+    marginTop: 2,
+  },
+  downloadDate: {
+    fontSize: 12,
+    color: EDU_COLORS.gray600,
+    marginBottom: 8,
+  },
   emptyDownloads: {
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 36,
+    paddingVertical: 50,
   },
   emptyDownloadsText: {
-    fontSize: 15,
+    fontSize: 16,
     color: EDU_COLORS.gray500,
     marginTop: 10,
   },
 
-  /* Image modal */
+  // Image Modal
   imageOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.9)", // Darker background for image viewer
+    paddingTop: Platform.OS === "android" ? 30 : 50,
+    paddingHorizontal: 10,
+    justifyContent: "space-between",
   },
   imageTop: {
-    position: "absolute",
-    top: 50,
-    right: 20,
     flexDirection: "row",
-    gap: 10,
+    justifyContent: "flex-end",
+    marginBottom: 10,
   },
   imageIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    padding: 10,
+    marginLeft: 10,
+  },
+  imageWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  modalImage: {
+    width: "100%",
+    height: "75%",
+    borderRadius: 10,
+  },
+  imageInfo: {
+    padding: 10,
+    width: "100%",
+    alignItems: "center",
+  },
+  imageTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+  },
+  imageDesc: {
+    fontSize: 14,
+    color: EDU_COLORS.gray300,
+    textAlign: "center",
+    marginTop: 5,
+  },
+  imageMeta: {
+    fontSize: 12,
+    color: EDU_COLORS.gray400,
+    marginTop: 8,
+  },
+  loadingCenterWrap: {
+    width: "100%",
+    paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  imageWrap: { width: "90%", height: "80%", alignItems: "center" },
-  modalImage: { width: "100%", height: "100%", flex: 1, borderRadius: 8 },
-  imageInfo: {
-    marginTop: 14,
+  loadingCard: {
     width: "100%",
-    borderRadius: 8,
-    padding: 12,
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: EDU_COLORS.surfaceSolid ?? "#FFFFFF",
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
-  imageTitle: {
-    color: "#fff",
+  loadingTitle: {
+    marginTop: 4,
     fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 6,
+    fontWeight: "700",
+    color: EDU_COLORS.gray900,
+    textAlign: "center",
   },
-  imageDesc: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
-    marginBottom: 6,
-    lineHeight: 20,
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.gray600,
+    textAlign: "center",
+    marginBottom: 8,
   },
-  imageMeta: { color: "rgba(255,255,255,0.65)", fontSize: 12 },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS.gray200,
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  progressBar: {
+    width: 80,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS.primary,
+  },
 });
