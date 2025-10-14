@@ -60,14 +60,7 @@ export default function TopNavbar({ currentRouteName, onBack, logoSource }) {
 
   const title = isLogin ? "" : FRIENDLY_TITLES[route] || route;
 
-  const onLogout = async () => {
-    try {
-      await signOut(auth);
-      showToast("success", "Logged out", "You’ve been signed out.");
-    } catch {
-      showToast("error", "Logout failed", "Please try again.");
-    }
-  };
+  
 
   return (
     <View style={styles.wrap} accessibilityRole="header">
@@ -95,22 +88,7 @@ export default function TopNavbar({ currentRouteName, onBack, logoSource }) {
         <Text style={styles.title}>{title}</Text>
       </View>
 
-      {/* Right: Logout (hidden on Login/Register) */}
-      {showLogout ? (
-        <Pressable
-          onPress={onLogout}
-          style={({ pressed }) => [
-            styles.logoutBtn,
-            pressed && { opacity: 0.75 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Logout"
-        >
-          <Text style={styles.logoutText}>Logout</Text>
-        </Pressable>
-      ) : (
-        <View style={{ width: 68 /* keep right side balanced */ }} />
-      )}
+      
     </View>
   );
 }

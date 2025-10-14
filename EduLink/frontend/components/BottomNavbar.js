@@ -1,9 +1,19 @@
+// components/BottomNavbar.js
 import React, { useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Platform,
+  Alert,
+} from "react-native";
 import Toast from "react-native-toast-message";
 import { CommonActions } from "@react-navigation/native";
-
 import { BlurView } from "expo-blur";
+import { signOut } from "firebase/auth";
+
+import { auth } from "../services/firebaseAuth";
 import {
   EDU_COLORS,
   Surfaces,
@@ -11,13 +21,10 @@ import {
   PALETTE_60_30_10,
 } from "../theme/colors";
 
-// Set a slightly taller, more substantial height for better touch targets and design balance
+/* ---------- Constants ---------- */
 export const BOTTOM_NAV_HEIGHT = 100;
 
-// The BRAND constant is for the specific accent color used in the component's logic
-const BRAND = { accent: "#E11D48" }; // This is used for destructive actions like Logout
-
-// --- Toast Utility (No Change) ---
+/* ---------- Toast Utility ---------- */
 const showToast = (type, text1, text2) =>
   Toast.show({
     type,
@@ -28,38 +35,61 @@ const showToast = (type, text1, text2) =>
     visibilityTime: 2500,
   });
 
-/* ---------- Unicode Icon Mapping Utility ---------- */
-// Uses Emojis/Unicode as a replacement for dedicated icons to fulfill the visual enhancement request
+/* ---------- Logout (with confirm) ---------- */
+const onLogout = async () => {
+  Alert.alert(
+    "Logout",
+    "Are you sure you want to sign out?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            showToast("success", "Logged out", "You’ve been signed out.");
+          } catch {
+            showToast("error", "Logout failed", "Please try again.");
+          }
+        },
+      },
+    ],
+    { cancelable: true }
+  );
+};
+
+/* ---------- Unicode Icon Mapping ---------- */
 function getIconForLabel(label) {
   switch (label) {
     case "Dashboard":
-      return "📊"; // Chart/Stats
+      return "📊";
     case "Home":
-      return "🏠"; // House
+      return "🏠";
     case "Notifications":
-      return "🔔"; // Bell
+      return "🔔";
     case "Q&A":
-      return "💬"; // Speech Bubble
+      return "💬";
     case "Resources":
-      return "📚"; // Books
+      return "📚";
     case "Study":
-      return "📝"; // Pencil/Notes
+      return "📝";
     case "Progress":
-      return "📈"; // Growth Chart
-    case "Profile":
-      return "👤"; // Person Outline
+      return "📈";
+    case "Logout":
+      return "🚪";
     default:
-      return "⭐️"; // Star fallback
+      return "⭐️";
   }
 }
 
-/* ---------- Items by role (No Change to data structure) ---------- */
+/* ---------- Items by role (Profile → Logout) ---------- */
 function getNavItemsByRole(role) {
   if (role === "parent") {
     return [
       { label: "Dashboard", kind: "tab", tab: "Dashboard" },
       { label: "Notifications", kind: "tab", tab: "Notifications" },
-      { label: "Profile", kind: "tab", tab: "Profile" },
+      { label: "Logout", kind: "logout", destructive: true },
     ];
   }
   if (role === "teacher") {
@@ -67,7 +97,7 @@ function getNavItemsByRole(role) {
       { label: "Home", kind: "tab", tab: "Home" },
       { label: "Q&A", kind: "tab", tab: "Q&A" },
       { label: "Resources", kind: "tab", tab: "Resources" },
-      { label: "Profile", kind: "tab", tab: "Profile" },
+      { label: "Logout", kind: "logout", destructive: true },
     ];
   }
   // student / tutor
@@ -77,8 +107,7 @@ function getNavItemsByRole(role) {
     { label: "Resources", kind: "tab", tab: "Resources" },
     { label: "Study", kind: "tab", tab: "StudyPlanner" },
     { label: "Progress", kind: "tab", tab: "Progress" },
-    { label: "Profile", kind: "tab", tab: "Profile" },
-    // Removed incomplete { from original code
+    { label: "Logout", kind: "logout", destructive: true },
   ];
 }
 
@@ -90,7 +119,6 @@ export default function BottomNavbar({
 }) {
   const items = useMemo(() => getNavItemsByRole(role), [role]);
 
-  // --- Navigation Functions (No Change) ---
   const goToTab = (tab) => {
     try {
       navigationRef?.current?.dispatch(
@@ -111,24 +139,17 @@ export default function BottomNavbar({
     }
   };
 
-  // onLogout function was removed from the item logic in your request,
-  // so the placeholder is commented out for cleanliness.
-
   return (
-    // Use BlurView for a modern, trustworthy frosted glass effect
     <BlurView intensity={28} tint="light" style={styles.barContainer}>
       {items.map((it) => {
         const isActive = activeTab && it.tab === activeTab;
 
-        // Dynamic color selection based on state and destruction flag
         const color = it.destructive
-          ? BRAND.accent
+          ? EDU_COLORS.accent // themed accent for logout
           : isActive
-          ? EDU_COLORS.primary // Use primary for icon/text color for the active state
-          : EDU_COLORS.gray400; // Use gray400 for a muted, clean look
+          ? "#FFFFFF"
+          : EDU_COLORS.gray400;
 
-        // Icon color is always the same as text color
-        const iconColor = color;
         const icon = getIconForLabel(it.label);
 
         return (
@@ -137,9 +158,8 @@ export default function BottomNavbar({
             onPress={() => {
               if (it.kind === "tab") return goToTab(it.tab);
               if (it.kind === "screen") return goToScreen(it.screen);
-              // if (it.kind === "logout") return onLogout(); // Logic removed by user request
+              if (it.kind === "logout") return onLogout();
             }}
-            // Enhanced press feedback for a more native feel
             style={({ pressed }) => [
               styles.item,
               pressed && { opacity: 0.75, transform: [{ scale: 0.98 }] },
@@ -147,22 +167,16 @@ export default function BottomNavbar({
             accessibilityRole="button"
             accessibilityLabel={it.label}
           >
-            {/* --- ICON --- */}
-            <Text
-              style={[styles.icon, { color: iconColor }]}
-              accessible={false} // Icon is decorative, not focusable
-            >
+            <Text style={[styles.icon, { color }]} accessible={false}>
               {icon}
             </Text>
-
-            {/* --- LABEL --- */}
             <Text
               style={[
                 styles.label,
+                isActive ? styles.labelActive : styles.labelInactive,
                 { color },
-                isActive ? styles.labelActive : styles.labelInactive, // Use consistent active style
               ]}
-              numberOfLines={1} // Ensures full responsiveness for label length
+              numberOfLines={1}
             >
               {it.label}
             </Text>
@@ -173,7 +187,7 @@ export default function BottomNavbar({
   );
 }
 
-/* ---------- Styles (Finalized & Icon-Ready) ---------- */
+/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   barContainer: {
     position: "absolute",
@@ -185,48 +199,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
     paddingHorizontal: 12,
-    borderTopWidth: StyleSheet.hairlineWidth, // Use a very fine line
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Surfaces.border,
-    backgroundColor: Surfaces.solid, // Fallback to clean, solid white
+    backgroundColor: Surfaces.solid, // subtle solid under blur (palette-based)
     zIndex: 99,
   },
   item: {
     flex: 1,
+    minHeight: "100%",
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 4, // Adjusted padding for better vertical centering
+    paddingTop: 4,
     paddingBottom: Platform.select({ ios: 4, default: 4 }),
-    minHeight: "100%",
   },
   icon: {
-    fontSize: 22, // Size for a modern, visible icon
-    lineHeight: 24, // Consistent line height
-    marginBottom: Platform.select({ ios: 0, default: 2 }), // Small adjustment for better visual alignment
-    color: EDU_COLORS.gray400,
-    fontWeight: "600", // Default color, will be overridden by inline style
+    fontSize: 22,
+    lineHeight: 24,
+    marginBottom: Platform.select({ ios: 0, default: 2 }),
+    fontWeight: "600",
   },
   label: {
-    fontSize: 12, // Smaller font for a professional, icon-first design
+    fontSize: 12,
     letterSpacing: 0.2,
     textAlign: "center",
-    // Base font weight for all platforms
     fontWeight: "500",
     marginTop: 1,
-    // Minimal space between icon and text
+    color: "#FFFFFF",
   },
-  // Unified active style for all platforms
   labelActive: {
     fontWeight: "700",
-    color: EDU_COLORS.primary700,
     backgroundColor: Buttons.primaryBg,
-    borderColor: Buttons.primaryBg,
-    color: "#FFFFFF",
-    paddingHorizontal: 1,
-    paddingVertical: 1,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     borderRadius: 4,
-
     borderWidth: 1,
     borderColor: Surfaces.border,
+    color: "black",
   },
   labelInactive: {
     fontWeight: "500",
