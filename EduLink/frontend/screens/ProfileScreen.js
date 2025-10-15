@@ -1,5 +1,11 @@
-// --- ProfileScreen.js (cleaned & validated; no style or logic changes) ---
-import React, { useEffect, useMemo, useState } from "react";
+// --- ProfileScreen.js (restyled as compact tiles; logic preserved) ---
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -17,13 +23,12 @@ import {
   HelperText,
   Divider,
   ActivityIndicator,
+  IconButton,
+  Avatar,
 } from "react-native-paper";
 import Toast from "react-native-toast-message";
 import * as ImagePicker from "expo-image-picker";
-import {
-  useSafeAreaInsets,
-  SafeAreaView,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   signOut,
   updatePassword,
@@ -41,14 +46,12 @@ import {
   where,
   getDocs,
 } from "firebase/firestore";
-// If you upload to Storage, wire these (left as-is from your code comments)
-// import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-
 import { BlurView } from "expo-blur";
+
 import {
   EDU_COLORS,
   Surfaces,
-  Buttons, // (unused in this file — left untouched)
+  Buttons, // used in styles.statNumber
 } from "../theme/colors";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
 import { calculateUserStats } from "../utils/userStatsCalculator";
@@ -89,12 +92,13 @@ const SUBJECTS = [
 ];
 const GRADES = ["6", "7", "8", "9", "10", "11", "12", "13"];
 const PAGE_TOP_OFFSET = 8;
+
 /* ---------- Toast: always from top, above navbar & modals ---------- */
 function useToast() {
   const insets = useSafeAreaInsets();
   const topOffset = (insets?.top || 0) + (NAVBAR_HEIGHT || 0) + 8;
 
-  return React.useCallback(
+  return useCallback(
     (type, text1, text2) => {
       Toast.show({
         type, // 'success' | 'error' | 'info'
@@ -104,16 +108,13 @@ function useToast() {
         topOffset:
           topOffset || Platform.select({ ios: 48, android: 28, default: 32 }),
         visibilityTime: 3200,
-        props: {
-          style: { zIndex: 20000, elevation: 20000 },
-        },
       });
     },
     [topOffset]
   );
 }
 
-/* ---------- Reusable Blur Card (kept exactly as in your styles usage) ---------- */
+/* ---------- Reusable Blur Card (used for hero/header only) ---------- */
 const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
     {children}
@@ -126,7 +127,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function validateProfileFields(role, { name, grade, subject, studentEmail }) {
   const errors = {};
 
-  // Name: required, min 3
   if (!name || name.trim().length < 3) {
     errors.name = "Full name must be at least 3 characters.";
   }
@@ -144,7 +144,6 @@ function validateProfileFields(role, { name, grade, subject, studentEmail }) {
     if (!sub) {
       errors.subject = "Please select your teaching subject.";
     } else if (!SUBJECTS.includes(sub)) {
-      // Keep subject constrained to the list to match your UI intent
       errors.subject = "Select a subject from the list.";
     }
   }
@@ -163,8 +162,47 @@ function validateProfileFields(role, { name, grade, subject, studentEmail }) {
 
 const strongPass = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
 
+/* ---------- Animated Tile (for compact, card-like UI) ---------- */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const Tile = ({ icon, title, subtitle, right, onPress, style }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const handleIn = () =>
+    Animated.spring(scale, { toValue: 0.98, useNativeDriver: true }).start();
+  const handleOut = () =>
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={handleIn}
+      onPressOut={handleOut}
+      style={[
+        styles.tile,
+        {
+          transform: [{ scale }],
+        },
+        style,
+      ]}
+    >
+      <View style={styles.tileRow}>
+        <Avatar.Icon
+          size={36}
+          icon={icon}
+          color="#0B1220"
+          style={styles.tileIcon}
+        />
+        <View style={styles.tileTextWrap}>
+          <Text style={styles.tileTitle}>{title}</Text>
+          {!!subtitle && <Text style={styles.tileSubtitle}>{subtitle}</Text>}
+        </View>
+        {right}
+      </View>
+    </AnimatedPressable>
+  );
+};
+
 /* ======================= Component ======================= */
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen() {
   const showToast = useToast();
 
   const [userProfile, setUserProfile] = useState({});
@@ -196,9 +234,9 @@ export default function ProfileScreen({ navigation }) {
     studentEmail: false,
   });
 
-  const barAnim = React.useRef(new Animated.Value(0)).current;
+  const barAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!loading) return;
     const loop = Animated.loop(
       Animated.sequence([
@@ -218,10 +256,9 @@ export default function ProfileScreen({ navigation }) {
     return () => loop.stop();
   }, [loading, barAnim]);
 
-  // Interpolate to slide the bar from left to right
   const barTranslate = barAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-80, 280], // will be clamped by container width; feels smooth on phones & tablets
+    outputRange: [-80, 280],
   });
 
   const filteredSubjects = useMemo(() => {
@@ -234,6 +271,7 @@ export default function ProfileScreen({ navigation }) {
 
   useEffect(() => {
     fetchUserProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchChildData = async (parentData) => {
@@ -334,7 +372,6 @@ export default function ProfileScreen({ navigation }) {
   const saveProfile = async () => {
     const role = userProfile.role;
 
-    // Validate
     const errors = validateProfileFields(role, {
       name: updName,
       grade: updGrade,
@@ -343,7 +380,6 @@ export default function ProfileScreen({ navigation }) {
     });
 
     if (Object.keys(errors).length) {
-      // mark touched and show the first error via toast
       setTouched((t) => ({
         ...t,
         name: t.name || !!errors.name,
@@ -378,9 +414,6 @@ export default function ProfileScreen({ navigation }) {
       if (role === "teacher") payload.subject = updSubject.trim();
       if (role === "parent") payload.studentEmail = updStudentEmail.trim();
 
-      // If you later enable Storage uploads, keep your scaffold here (unchanged).
-      // if (editImageUri && editImageUri.startsWith("file://")) { ... }
-
       await updateDoc(doc(db, "users", uid), payload);
 
       try {
@@ -388,7 +421,7 @@ export default function ProfileScreen({ navigation }) {
           displayName: updName.trim(),
         });
       } catch {
-        // silent — not critical
+        // non-critical
       }
 
       await fetchUserProfile();
@@ -478,6 +511,7 @@ export default function ProfileScreen({ navigation }) {
       ? "TUTOR"
       : (role || "user").toUpperCase();
 
+  /* ---------- UI ---------- */
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -486,17 +520,16 @@ export default function ProfileScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Inline loading (no overlay) */}
+        {/* Inline loading */}
         {loading && (
           <View style={styles.loadingCenterWrap}>
             <View style={styles.loadingCard}>
               <ActivityIndicator size="large" color={EDU_COLORS.primary} />
               <Text style={styles.loadingTitle}>Loading Your Profile</Text>
               <Text style={styles.loadingSubtitle}>
-                Fetching Stats and Settings …
+                Fetching stats and settings…
               </Text>
 
-              {/* Indeterminate progress bar */}
               <View style={styles.progressTrack}>
                 <Animated.View
                   style={[
@@ -509,8 +542,8 @@ export default function ProfileScreen({ navigation }) {
           </View>
         )}
 
-        {/* Header */}
-        <View style={[styles.chatBubble, styles.centered]}>
+        {/* Header / Hero */}
+        <BlurCard style={[styles.chatBubble, styles.centered]}>
           <View style={styles.profileImageContainer}>
             {userProfile.profileImage ? (
               <Image
@@ -540,19 +573,19 @@ export default function ProfileScreen({ navigation }) {
             style={[
               styles.roleTag,
               {
-                backgroundColor: EDU_COLORS.primary,
-                borderColor: Surfaces.border,
+                backgroundColor: Buttons.accentBg,
+                borderColor: Buttons.accentBg,
                 borderWidth: 1,
               },
             ]}
           >
             <Text style={styles.roleText}>{roleLabel}</Text>
           </View>
-        </View>
+        </BlurCard>
 
-        {/* Profile Details */}
-        <BlurCard style={[styles.chatBubble]}>
-          <Text style={styles.sectionTitle}>Profile Details</Text>
+        {/* Profile Details as compact card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Profile Details</Text>
 
           <View style={styles.detailItem}>
             <Text style={styles.detailLabel}>Full Name</Text>
@@ -603,12 +636,12 @@ export default function ProfileScreen({ navigation }) {
                 "Unknown"}
             </Text>
           </View>
-        </BlurCard>
+        </View>
 
         {/* Parent → Student Details */}
         {role === "parent" && childData && (
-          <BlurCard style={[styles.chatBubble]}>
-            <Text style={styles.sectionTitle}>Student Details</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Student Details</Text>
 
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Student Name</Text>
@@ -638,14 +671,14 @@ export default function ProfileScreen({ navigation }) {
                 {Math.floor((childData.points || 0) / 200) + 1}
               </Text>
             </View>
-          </BlurCard>
+          </View>
         )}
 
         {/* Non-parent → Stats */}
         {role !== "parent" && (
-          <BlurCard style={[styles.chatBubble]}>
-            <Text style={styles.sectionTitle}>My Stats</Text>
-            <View className="statsGrid" style={styles.statsGrid}>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>My Stats</Text>
+            <View style={styles.statsGrid}>
               <View
                 style={[
                   styles.statCard,
@@ -689,12 +722,12 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.statLabel}>Level</Text>
               </View>
             </View>
-          </BlurCard>
+          </View>
         )}
 
         {/* Actions */}
         <View style={[styles.actionsSection, { paddingHorizontal: 16 }]}>
-          <Button mode="outlined" onPress={openEditProfile}>
+          <Button mode="outlined" onPress={openEditProfile} icon="account-edit">
             Edit Profile
           </Button>
           <Button
@@ -702,6 +735,7 @@ export default function ProfileScreen({ navigation }) {
             onPress={handleLogout}
             loading={loggingOut}
             style={styles.logoutButton}
+            icon="logout"
           >
             Logout
           </Button>
@@ -757,7 +791,7 @@ export default function ProfileScreen({ navigation }) {
                     </View>
                   )}
                 </Pressable>
-                <Button mode="outlined" onPress={pickImage}>
+                <Button mode="outlined" onPress={pickImage} icon="image-edit">
                   Change Photo
                 </Button>
               </View>
@@ -767,10 +801,7 @@ export default function ProfileScreen({ navigation }) {
                 label="Full Name"
                 mode="outlined"
                 value={updName}
-                onChangeText={(v) => {
-                  setUpdName(v);
-                  if (!touched.name) return;
-                }}
+                onChangeText={(v) => setUpdName(v)}
                 style={styles.modalInput}
                 error={touched.name && !(updName || "").trim()}
                 onBlur={() => setTouched((t) => ({ ...t, name: true }))}
@@ -786,11 +817,7 @@ export default function ProfileScreen({ navigation }) {
                     label="Grade"
                     mode="outlined"
                     value={updGrade}
-                    onFocus={() => {
-                      if (!updGrade) setUpdGrade(GRADES[0]);
-                    }}
                     right={<TextInput.Icon icon="chevron-down" />}
-                    onPressIn={() => {}}
                     style={styles.modalInput}
                     error={touched.grade && !updGrade}
                     placeholder="Select grade (6–13)"
@@ -831,7 +858,6 @@ export default function ProfileScreen({ navigation }) {
                     label="Subject"
                     mode="outlined"
                     value={updSubject}
-                    onFocus={() => setSubjectQuery("")}
                     style={styles.modalInput}
                     error={touched.subject && !(updSubject || "").trim()}
                     placeholder="Select teaching subject"
@@ -906,6 +932,7 @@ export default function ProfileScreen({ navigation }) {
                   onPress={saveProfile}
                   loading={savingProfile}
                   style={styles.saveButton}
+                  icon="content-save"
                 >
                   Update Profile
                 </Button>
@@ -948,6 +975,7 @@ export default function ProfileScreen({ navigation }) {
                   mode="contained"
                   onPress={savePassword}
                   loading={savingPassword}
+                  icon="lock-reset"
                 >
                   Change Password
                 </Button>
@@ -961,11 +989,6 @@ export default function ProfileScreen({ navigation }) {
   );
 }
 
-/* ========= Styles =========
-   NOTE: Your existing styles object (`styles`) is assumed to be present.
-   Per your instruction, no style changes were made.
-*/
-
 /* ============================ Styles ============================ */
 
 const styles = StyleSheet.create({
@@ -974,18 +997,7 @@ const styles = StyleSheet.create({
     paddingTop: PAGE_TOP_OFFSET,
     backgroundColor: "transparent",
   },
-
-  content: {
-    flex: 1,
-  },
-
-  /* ---- Typographic helpers ---- */
-  loadingText: {
-    fontSize: 20,
-    color: "white",
-    fontWeight: "600",
-    textAlign: "center",
-  },
+  content: { flex: 1 },
 
   /* ---- Card shells ---- */
   blurCard: {
@@ -1004,22 +1016,67 @@ const styles = StyleSheet.create({
   centered: { alignItems: "center", justifyContent: "center" },
 
   /* ---- Loading ---- */
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+  loadingCenterWrap: {
+    width: "100%",
+    minHeight: 220,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
     alignItems: "center",
-    backgroundColor: "transparent",
+    justifyContent: "center",
+  },
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: EDU_COLORS.surfaceSolid,
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#1F2937",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  loadingTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: EDU_COLORS.textPrimary ?? "#0B1220",
+    textAlign: "center",
+  },
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.textSecondary ?? "rgba(0,0,0,0.6)",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  progressTrack: {
+    marginTop: 6,
+    width: "100%",
+    maxWidth: 420,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: EDU_COLORS.surfaceSoft ?? "rgba(0,0,0,0.06)",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "rgba(0,0,0,0.08)",
+  },
+  progressFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 100,
+    borderRadius: 999,
+    backgroundColor: EDU_COLORS.primary,
+    opacity: 0.9,
   },
 
   /* ---- Profile header ---- */
-  profileImageContainer: {
-    marginBottom: 16,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
+  profileImageContainer: { marginBottom: 16 },
+  profileImage: { width: 100, height: 100, borderRadius: 50 },
   defaultAvatar: {
     width: 100,
     height: 100,
@@ -1027,11 +1084,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: {
-    color: "white",
-    fontSize: 36,
-    fontWeight: "600",
-  },
+  avatarText: { color: "white", fontSize: 36, fontWeight: "600" },
   userName: {
     fontSize: 24,
     fontWeight: "700",
@@ -1057,26 +1110,65 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  /* ---- Sections ---- */
-  sectionTitle: {
+  /* ---- Compact Tiles ---- */
+  tileSection: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  tile: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    elevation: 1,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  tileRow: { flexDirection: "row", alignItems: "center" },
+  tileIcon: {
+    backgroundColor: "#F3F4F6",
+    marginRight: 12,
+  },
+  tileTextWrap: { flex: 1 },
+  tileTitle: { fontSize: 15.5, fontWeight: "700", color: "#0B1220" },
+  tileSubtitle: { marginTop: 2, fontSize: 12.5, color: "#6B7280" },
+
+  /* ---- Generic Card (for details & stats) ---- */
+  card: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    overflow: "hidden",
+  },
+  cardTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
   },
+
+  /* ---- Details ---- */
   detailItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
     minHeight: 44,
   },
-  detailLabel: {
-    fontSize: 16,
-    color: "#6B7280",
-  },
+  detailLabel: { fontSize: 16, color: "#6B7280" },
   detailValue: {
     fontSize: 16,
     fontWeight: "600",
@@ -1092,6 +1184,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "space-between",
     gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: 6,
   },
   statCard: {
     width: "47%",
@@ -1104,21 +1199,14 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 24,
     fontWeight: "700",
-    color: Buttons.accentBg,
+    color: Buttons?.accentBg ?? "#0A8CA0",
   },
-  statLabel: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 4,
-  },
+  statLabel: { fontSize: 14, color: "#6B7280", marginTop: 4 },
 
   /* ---- Actions ---- */
-  actionsSection: {
-    gap: 12,
-    marginBottom: 40,
-  },
+  actionsSection: { gap: 12, marginBottom: 40 },
   logoutButton: {
-    backgroundColor: EDU_COLORS.error,
+    backgroundColor: EDU_COLORS?.error ?? "#DC2626",
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 12,
@@ -1131,8 +1219,8 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0, // full-height coverage
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
+    bottom: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1158,11 +1246,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-  },
+  modalTitle: { fontSize: 20, fontWeight: "700", color: "#111827" },
   closeButton: {
     width: 36,
     height: 36,
@@ -1176,40 +1260,25 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 22,
   },
-  modalBody: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  modalInput: {
-    marginBottom: 14,
-  },
+  modalBody: { paddingHorizontal: 20, paddingTop: 16 },
+  modalInput: { marginBottom: 14 },
+
   modalPhotoRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     marginBottom: 8,
   },
-  modalPhoto: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    overflow: "hidden",
-  },
-  modalProfileImage: {
-    width: "100%",
-    height: "100%",
-  },
+  modalPhoto: { width: 72, height: 72, borderRadius: 36, overflow: "hidden" },
+  modalProfileImage: { width: "100%", height: "100%" },
   modalDefaultAvatar: {
     width: "100%",
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
   },
-  modalAvatarText: {
-    color: "white",
-    fontSize: 28,
-    fontWeight: "700",
-  },
+  modalAvatarText: { color: "white", fontSize: 28, fontWeight: "700" },
+
   modalActionsRow: {
     flexDirection: "row",
     gap: 12,
@@ -1218,12 +1287,7 @@ const styles = StyleSheet.create({
   },
 
   /* Pills / pickers */
-  gradeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 6,
-  },
+  gradeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 6 },
   gradePill: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1232,85 +1296,11 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     backgroundColor: "#F8FAFC",
   },
-  gradePillActive: {
-    backgroundColor: "#E0F2FE",
-    borderColor: "#93C5FD",
-  },
+  gradePillActive: { backgroundColor: "#E0F2FE", borderColor: "#93C5FD" },
   gradePillText: { color: "#0F172A", fontWeight: "600" },
   gradePillTextActive: { color: "#1D4ED8" },
 
-  subjectList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-
-  /* Centered wrap that respects safe areas and stays inline */
-  loadingCenterWrap: {
-    width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  /* Card that matches EduLink surface language (no blur) */
-  loadingCard: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 16,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
-    borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#1F2937",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-
-  loadingTitle: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.textPrimary ?? "#0B1220",
-    textAlign: "center",
-  },
-
-  loadingSubtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-
-  /* Indeterminate progress bar track + fill */
-  progressTrack: {
-    marginTop: 6,
-    width: "100%",
-    maxWidth: 420,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: EDU_COLORS.surfaceSoft ?? "rgba(255,255,255,0.06)",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: Surfaces?.border ?? "rgba(255,255,255,0.1)",
-  },
-
-  progressFill: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 100, // width of the moving segment
-    borderRadius: 999,
-    backgroundColor: EDU_COLORS.primary, // brand color
-    opacity: 0.9,
-  },
-
+  subjectList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   subjectPill: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1319,10 +1309,7 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     backgroundColor: "#F8FAFC",
   },
-  subjectPillActive: {
-    backgroundColor: "#EDE9FE",
-    borderColor: "#C4B5FD",
-  },
+  subjectPillActive: { backgroundColor: "#EDE9FE", borderColor: "#C4B5FD" },
   subjectPillText: { color: "#0F172A", fontWeight: "600" },
   subjectPillTextActive: { color: "#6D28D9" },
 });

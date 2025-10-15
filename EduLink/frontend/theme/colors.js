@@ -1,42 +1,42 @@
 import { MD3LightTheme as DefaultTheme } from "react-native-paper";
 
 /**
- * EDU Link — Accessible Color System (60 / 30 / 10)
- * -------------------------------------------------
- * 60% Dominant base: calm, paper-like canvas for long reading.
- * 30% Primary structure: trustworthy academic teal-blue.
- * 10% Accent: warm amber for CTAs and motivational highlights.
+ * EDU Link — Accessible Academic Theme (60 / 30 / 10)
+ * ---------------------------------------------------
+ * 60% Dominant base: paper-like calm white surfaces.
+ * 30% Primary: academic teal-blue for structure & focus.
+ * 10% Accent: warm amber for CTAs & motivation.
  */
 
 export const EDU_COLORS = {
   /* ---- Brand Core (Academic Teal-Blue) ---- */
   primary: "#0A8CA0",
   primary600: "#0A7480",
-  primary700: "#065A63", // headers/active states with white text
+  primary700: "#065A63",
 
-  /* ---- Supporting / Secondary ---- */
-  secondary: "#14B8A6",
-  secondary600: "#0D9488",
-  secondary700: "#0F766E",
+  /* ---- Secondary (Pure White surfaces — 60%) ---- */
+  secondary: "#FFFFFF", // <— keep as-is
+  secondary600: "#F9FAFB",
+  secondary700: "#F3F4F6",
 
-  /* ---- Accent (Motivational Amber) ---- */
+  /* ---- Accent (Motivational Amber — 10%) ---- */
   accent: "#F59E0B",
   accent600: "#D97706",
   accent700: "#B45309",
 
   /* ---- Backgrounds & Surfaces ---- */
   base: "#F8FAFC",
-  background: "#F1F5FF",
-  surface: "rgba(255, 255, 255, 0.18)",
-  surfaceStrong: "rgba(255, 255, 255, 0.50)",
-  surfaceSolid: "rgba(255, 255, 255, 0.98)",
-  outline: "rgba(0, 0, 0, 0.08)",
-  borderLight: "rgba(0, 0, 0, 0.12)",
+  background: "#F8FAFC",
+  surface: "rgba(255,255,255,0.18)",
+  surfaceStrong: "rgba(255,255,255,0.50)",
+  surfaceSolid: "#FFFFFF",
+  outline: "rgba(0,0,0,0.08)",
+  borderLight: "rgba(0,0,0,0.12)",
 
   /* ---- Text ---- */
-  textPrimary: "#111111",
-  textSecondary: "#6B7280", // strong near-black for readability
-  textMuted: "#2B2B2B", // lighter neutral for secondary labels
+  textPrimary: "#0B1220",
+  textSecondary: "#475569",
+  textMuted: "#6B7280",
   textOnGlass: "#111111",
   placeholder: "#4A4A4A",
 
@@ -50,29 +50,30 @@ export const EDU_COLORS = {
   info: "#0EA5E9",
 
   /* ---- Utility ---- */
-  shadow: "rgba(0, 0, 0, 0.25)",
+  shadow: "rgba(0,0,0,0.25)",
 
-  /* ---- Extended Neutral Blacks (Replacing Grays) ---- */
-  gray50: "#FAFAFA", // lightest neutral
-  gray100: "#EAEAEA", // soft cards / dividers
-  gray200: "#CFCFCF", // light borders
-  gray300: "#A3A3A3", // inactive icon/text
-  gray400: "#6E6E6E", // muted text
-  gray500: "#444444", // standard neutral
-  gray600: "#2C2C2C", // dark surface
-  gray700: "#1A1A1A", // deep matte
-  gray800: "#0D0D0D", // almost black
-  gray900: "#000000", // true black
+  /* ---- Neutrals ---- */
+  gray50: "#FAFAFA",
+  gray100: "#F3F4F6",
+  gray200: "#E5E7EB",
+  gray300: "#D1D5DB",
+  gray400: "#9CA3AF",
+  gray500: "#6B7280",
+  gray600: "#4B5563",
+  gray700: "#374151",
+  gray800: "#1F2937",
+  gray900: "#0B1220",
 };
 
-/** App gradient — top teal-blue → soft white base */
-export const APP_GRADIENT = ["#0A8CA0", "#F1F5FF", "#F9FAFB", "#F8FAFC"];
+/** App gradient — top teal → brand teal → white base (kept as-is) */
+export const APP_GRADIENT = ["#FFFFFF", "#F9FAFB", "#F8FAFC"];
 
-/** 60/30/10 reference map */
+/** 60/30/10 reference map + tints used in UI */
 export const PALETTE_60_30_10 = {
-  dominant60: EDU_COLORS.base,
-  primary30: EDU_COLORS.primary,
-  accent10: EDU_COLORS.accent,
+  dominant60: EDU_COLORS.secondary, // white / paper
+  primary30: EDU_COLORS.primary, // teal structure
+  accent10: "rgba(245, 158, 11, 0.14)", // subtle amber tile background
+  accent60: "#F59E0B", // solid accent stripe/badge
   successAccent: EDU_COLORS.success,
   infoAccent: EDU_COLORS.info,
 };
@@ -85,13 +86,13 @@ export const paperTheme = {
     ...DefaultTheme.colors,
     primary: EDU_COLORS.primary,
     secondary: EDU_COLORS.secondary,
-    background: "transparent", // let APP_GRADIENT or bg image show through
+    background: "transparent",
     surface: EDU_COLORS.surfaceSolid,
     outline: EDU_COLORS.outline,
     error: EDU_COLORS.error,
 
     onPrimary: "#FFFFFF",
-    onSecondary: "#FFFFFF",
+    onSecondary: "#111111",
     onSurface: EDU_COLORS.textPrimary,
     onSurfaceVariant: EDU_COLORS.textMuted,
     placeholder: EDU_COLORS.placeholder,
@@ -126,7 +127,8 @@ export const Surfaces = {
   translucent: EDU_COLORS.surface,
   elevated: EDU_COLORS.surfaceStrong,
   solid: "#FFFFFF",
-  border: EDU_COLORS.borderLight,
+  faint: EDU_COLORS.gray100, // used for nested answer cards
+  border: EDU_COLORS.gray200, // consistent with screen
   soft: EDU_COLORS.gray100,
 };
 
@@ -143,9 +145,9 @@ export const Buttons = {
   primaryBg: EDU_COLORS.primary,
   primaryText: "#FFFFFF",
 
-  secondaryBg: EDU_COLORS.secondary600,
-  secondaryText: "#FFFFFF",
-  secondaryBorder: EDU_COLORS.gray300,
+  secondaryBg: EDU_COLORS.secondary,
+  secondaryText: EDU_COLORS.textPrimary,
+  secondaryBorder: EDU_COLORS.gray200,
 
   accentBg: EDU_COLORS.accent,
   accentText: "#FFFFFF",

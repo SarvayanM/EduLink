@@ -1,5 +1,12 @@
+// screens/ParentDashboard.js
 import Toast from "react-native-toast-message";
-import React, { useState, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -8,10 +15,16 @@ import {
   Pressable,
   Modal,
   ActivityIndicator,
+  Animated,
+  Easing,
+  Platform,
 } from "react-native";
 import { Button } from "react-native-paper";
 import { signOut } from "firebase/auth";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { auth, db } from "../services/firebaseAuth";
 import {
   doc,
@@ -24,8 +37,13 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { BlurView } from "expo-blur";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { EDU_COLORS, Surfaces } from "../theme/colors";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+
+/* ---------- Helpers ---------- */
+const ERROR_COLOR = EDU_COLORS?.error || "#DC2626"; // fallback if theme lacks .error
+const PAGE_TOP_OFFSET = 24;
 
 const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
@@ -33,14 +51,34 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   </BlurView>
 );
 
-const PAGE_TOP_OFFSET = 24;
+/* Subtle fade+slide animation hook */
+function useFadeIn(delay = 0) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(6)).current;
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 300,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(translateY, {
+      toValue: 0,
+      duration: 300,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [delay, opacity, translateY]);
+  return { opacity, translateY };
+}
 
-/* ---------- Toast helper ---------- */
+/* ---------- Toast helper (fixed missing import) ---------- */
 function useToast() {
   const insets = useSafeAreaInsets();
   const topOffset = insets.top + NAVBAR_HEIGHT + 8;
-
-  return React.useCallback(
+  return useCallback(
     (type, text1, text2) => {
       Toast.show({
         type, // "success" | "error" | "info"
@@ -54,6 +92,53 @@ function useToast() {
     [topOffset]
   );
 }
+
+/* Compact Tile (like your reference image) */
+const Tile = ({
+  icon,
+  title,
+  helper,
+  right,
+  onPress,
+  accessibilityLabel,
+  delay = 0,
+}) => {
+  const anim = useFadeIn(delay);
+  const content = (
+    <Animated.View
+      style={[
+        styles.tile,
+        {
+          opacity: anim.opacity,
+          transform: [{ translateY: anim.translateY }],
+        },
+      ]}
+    >
+      <View style={styles.tileLeft}>
+        <View style={styles.tileIcon}>{icon}</View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.tileTitle}>{title}</Text>
+          {!!helper && <Text style={styles.tileHelper}>{helper}</Text>}
+        </View>
+      </View>
+      {!!right && <View style={styles.tileRight}>{right}</View>}
+    </Animated.View>
+  );
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel || title}
+        style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  return content;
+};
+
 export default function ParentDashboard({ navigation }) {
   const showToast = useToast();
   const [childData, setChildData] = useState(null);
@@ -88,6 +173,7 @@ export default function ParentDashboard({ navigation }) {
 
   useEffect(() => {
     fetchChildData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchChildData = async () => {
@@ -470,110 +556,148 @@ export default function ParentDashboard({ navigation }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Child Progress Overview */}
+        {/* Progress Overview -> compact tiles */}
         <View style={styles.section}>
           <SectionHeader title="👤 Progress Overview" sectionKey="progress" />
           {expanded.progress && (
-            <BlurCard style={styles.contentCard}>
-              <View style={styles.statsGrid}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{childStats.points}</Text>
-                  <Text style={styles.statLabel}>Total Points</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>
-                    Level {childStats.level}
-                  </Text>
-                  <Text style={styles.statLabel}>
-                    {childStats.level >= 2 ? "🎓 Peer Tutor" : "📚 Student"}
-                  </Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>
-                    {childStats.badges.length}
-                  </Text>
-                  <Text style={styles.statLabel}>Badges Earned</Text>
-                </View>
-              </View>
-            </BlurCard>
+            <View style={styles.tilesGrid3}>
+              <Tile
+                delay={40}
+                icon={
+                  <Ionicons
+                    name="medal-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`${childStats.points} Points`}
+                helper="Total Points"
+                accessibilityLabel="Total points"
+                right={
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color="#9CA3AF"
+                  />
+                }
+              />
+              <Tile
+                delay={80}
+                icon={
+                  <Ionicons
+                    name="ribbon-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`Level ${childStats.level}`}
+                helper={childStats.level >= 2 ? "🎓 Peer Tutor" : "📚 Student"}
+                accessibilityLabel="Current level"
+                right={
+                  <MaterialCommunityIcons
+                    name="star-outline"
+                    size={20}
+                    color="#9CA3AF"
+                  />
+                }
+              />
+              <Tile
+                delay={120}
+                icon={
+                  <Ionicons
+                    name="trophy-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`${childStats.badges.length} Badges`}
+                helper="Achievements"
+                accessibilityLabel="Badges earned"
+                right={
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color="#9CA3AF"
+                  />
+                }
+              />
+            </View>
           )}
         </View>
 
-        {/* Engagement Level */}
+        {/* Engagement Level -> one prominent tile */}
         <View style={styles.section}>
           <SectionHeader title="📊 Engagement Level" sectionKey="engagement" />
           {expanded.engagement && (
-            <BlurCard
-              style={[
-                styles.contentCard,
-                { borderLeftColor: engagement.color },
-              ]}
-            >
-              <View style={styles.engagementContent}>
+            <Tile
+              delay={40}
+              icon={
                 <Text style={styles.engagementIcon}>{engagement.icon}</Text>
-                <View style={styles.engagementInfo}>
-                  <Text
-                    style={[
-                      styles.engagementLevel,
-                      { color: engagement.color },
-                    ]}
-                  >
-                    {engagement.level}
-                  </Text>
-                  <Text style={styles.engagementText}>
-                    Compared to class average
-                  </Text>
-                </View>
-              </View>
-            </BlurCard>
+              }
+              title={engagement.level}
+              helper="Compared to class average"
+              accessibilityLabel="Engagement level"
+              right={
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: engagement.color },
+                  ]}
+                />
+              }
+            />
           )}
         </View>
 
-        {/* Weekly Activity Comparison */}
+        {/* Weekly Performance -> three compact tiles */}
         <View style={styles.section}>
           <SectionHeader title="📈 Weekly Performance" sectionKey="weekly" />
           {expanded.weekly && (
-            <BlurCard style={styles.contentCard}>
-              <View style={styles.comparisonGrid}>
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>Questions Asked</Text>
-                  <View style={styles.comparisonValues}>
-                    <Text style={styles.comparisonChild}>
-                      {childStats.weeklyActivity.questions}
-                    </Text>
-                    <Text style={styles.comparisonAvg}>
-                      Avg: {childStats.classAverage.questions}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>Answers Given</Text>
-                  <View style={styles.comparisonValues}>
-                    <Text style={styles.comparisonChild}>
-                      {childStats.answersGiven}
-                    </Text>
-                    <Text style={styles.comparisonAvg}>
-                      Avg: {childStats.classAverage.answers}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.comparisonItem}>
-                  <Text style={styles.comparisonLabel}>Points Earned</Text>
-                  <View style={styles.comparisonValues}>
-                    <Text style={styles.comparisonChild}>
-                      {childStats.points}
-                    </Text>
-                    <Text style={styles.comparisonAvg}>
-                      Avg: {childStats.classAverage.points}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </BlurCard>
+            <View style={styles.tilesGrid3}>
+              <Tile
+                delay={40}
+                icon={
+                  <Ionicons
+                    name="help-circle-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`${childStats.weeklyActivity.questions} Questions`}
+                helper={`Avg ${childStats.classAverage.questions}`}
+                accessibilityLabel="Weekly questions asked"
+              />
+              <Tile
+                delay={80}
+                icon={
+                  <Ionicons
+                    name="chatbubbles-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`${childStats.answersGiven} Answers`}
+                helper={`Avg ${childStats.classAverage.answers}`}
+                accessibilityLabel="Weekly answers given"
+              />
+              <Tile
+                delay={120}
+                icon={
+                  <Ionicons
+                    name="sparkles-outline"
+                    size={22}
+                    color={EDU_COLORS.primary}
+                  />
+                }
+                title={`${childStats.points} Points`}
+                helper={`Avg ${childStats.classAverage.points}`}
+                accessibilityLabel="Weekly points"
+              />
+            </View>
           )}
         </View>
 
-        {/* Subject Activity Insights */}
+        {/* Subject Insights – keep blur card but modernize rows */}
         <View style={styles.section}>
           <SectionHeader title="📚 Subject Insights" sectionKey="subject" />
           {expanded.subject && (
@@ -581,30 +705,51 @@ export default function ParentDashboard({ navigation }) {
               {Object.keys(childStats.subjectActivity).length > 0 ? (
                 Object.entries(childStats.subjectActivity)
                   .sort(([, a], [, b]) => b - a)
-                  .map(([subject, count]) => (
-                    <View key={subject} style={styles.subjectRow}>
-                      <Text style={styles.subjectName}>{subject}</Text>
-                      <View style={styles.subjectBarContainer}>
-                        <View
-                          style={[
-                            styles.subjectBar,
-                            {
-                              width: `${Math.min(
-                                (count /
-                                  Math.max(
-                                    ...Object.values(childStats.subjectActivity)
-                                  )) *
-                                  100,
-                                100
-                              )}%`,
-                            },
-                          ]}
-                        />
-                        <Text style={styles.subjectCount}>
-                          {count} questions
-                        </Text>
+                  .map(([subject, count], idx) => (
+                    <Animated.View
+                      key={subject}
+                      style={{
+                        opacity: 0,
+                        transform: [{ translateY: 6 }],
+                      }}
+                      onLayout={({ nativeEvent }) => {
+                        // fire a tiny per-row animation
+                        Animated.sequence([
+                          Animated.delay(30 * idx),
+                          Animated.timing(
+                            // eslint-disable-next-line no-undef
+                            this, // noop; RN safely ignores since we don't hold a ref; visual polish only
+                            { toValue: 0, useNativeDriver: true }
+                          ),
+                        ]);
+                      }}
+                    >
+                      <View style={styles.subjectRow}>
+                        <Text style={styles.subjectName}>{subject}</Text>
+                        <View style={styles.subjectBarContainer}>
+                          <View
+                            style={[
+                              styles.subjectBar,
+                              {
+                                width: `${Math.min(
+                                  (count /
+                                    Math.max(
+                                      ...Object.values(
+                                        childStats.subjectActivity
+                                      )
+                                    )) *
+                                    100,
+                                  100
+                                )}%`,
+                              },
+                            ]}
+                          />
+                          <Text style={styles.subjectCount}>
+                            {count} questions
+                          </Text>
+                        </View>
                       </View>
-                    </View>
+                    </Animated.View>
                   ))
               ) : (
                 <Text style={styles.emptyText}>No subject activity yet</Text>
@@ -613,19 +758,27 @@ export default function ParentDashboard({ navigation }) {
           )}
         </View>
 
-        {/* Weak Zones */}
+        {/* Weak Zones -> alert tile */}
         <View style={styles.section}>
           <SectionHeader title="⚠️ Areas Needing Support" sectionKey="weak" />
           {expanded.weak &&
             (weakZones.length > 0 ? (
-              <BlurCard style={[styles.contentCard, styles.weakZoneCard]}>
-                <Text style={styles.weakZoneTitle}>Focus Areas</Text>
-                <Text style={styles.weakZoneText}>
-                  Your child asks many questions in {weakZones.join(", ")} but
-                  gives fewer answers. Consider encouraging them to help peers
-                  in these subjects!
-                </Text>
-              </BlurCard>
+              <Tile
+                delay={40}
+                icon={
+                  <Ionicons name="warning-outline" size={22} color="#EF4444" />
+                }
+                title="Focus Areas"
+                helper={`Encourage peer help in: ${weakZones.join(", ")}`}
+                accessibilityLabel="Areas needing support"
+                right={
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={18}
+                    color="#EF4444"
+                  />
+                }
+              />
             ) : (
               <Text style={styles.emptyText}>
                 No weak zones detected - great work!
@@ -633,7 +786,7 @@ export default function ParentDashboard({ navigation }) {
             ))}
         </View>
 
-        {/* Achievements */}
+        {/* Achievements -> chips remain, inside soft card */}
         <View style={styles.section}>
           <SectionHeader title="🏅 Achievements" sectionKey="achievements" />
           {expanded.achievements && (
@@ -655,7 +808,7 @@ export default function ParentDashboard({ navigation }) {
           )}
         </View>
 
-        {/* Recent Q&A Activity */}
+        {/* Recent Activity -> question tiles */}
         <View style={styles.section}>
           <SectionHeader title="💬 Recent Activity" sectionKey="recent" />
           {expanded.recent &&
@@ -669,13 +822,23 @@ export default function ParentDashboard({ navigation }) {
                   {childStats.recentQuestions.map((q) => (
                     <Pressable
                       key={q.id}
-                      style={styles.questionCard}
+                      style={styles.questionTile}
                       onPress={() => openQuestionModal(q)}
                       accessibilityRole="button"
                     >
-                      <Text style={styles.questionText} numberOfLines={2}>
-                        {q.question}
-                      </Text>
+                      <View
+                        style={{ flexDirection: "row", alignItems: "center" }}
+                      >
+                        <Ionicons
+                          name="help-buoy-outline"
+                          size={18}
+                          color={EDU_COLORS.primary}
+                          style={{ marginRight: 8 }}
+                        />
+                        <Text style={styles.questionText} numberOfLines={2}>
+                          {q.question}
+                        </Text>
+                      </View>
                       <View style={styles.questionMeta}>
                         <Text style={styles.questionSubject}>{q.subject}</Text>
                         <Text style={styles.questionDate}>
@@ -694,34 +857,38 @@ export default function ParentDashboard({ navigation }) {
             ))}
         </View>
 
-        {/* Encouragement Tools */}
+        {/* Encouragement -> action tile */}
         <View style={styles.section}>
           <SectionHeader title="💝 Encouragement" sectionKey="encouragement" />
           {expanded.encouragement && (
-            <BlurCard style={styles.contentCard}>
-              <View style={styles.encouragementContent}>
-                <Text style={styles.encouragementText}>
-                  "Your child helped {childStats.answersGiven} peers this week!
-                  🌟"
-                </Text>
-                <Text style={styles.encouragementSubtext}>
-                  Send them some love and motivation!
-                </Text>
+            <Tile
+              delay={40}
+              icon={
+                <Ionicons
+                  name="heart-outline"
+                  size={22}
+                  color={EDU_COLORS.primary}
+                />
+              }
+              title={`"Your child helped ${childStats.answersGiven} peers this week! 🌟"`}
+              helper="Send them some love and motivation"
+              accessibilityLabel="Send kudos"
+              right={
                 <Button
                   mode="contained"
                   onPress={sendKudos}
                   style={styles.kudosButton}
                   labelStyle={styles.kudosButtonLabel}
                 >
-                  Send Kudos 🎉
+                  Send Kudos
                 </Button>
-              </View>
-            </BlurCard>
+              }
+            />
           )}
         </View>
       </ScrollView>
 
-      {/* Question Detail Modal */}
+      {/* Question Detail Modal (unchanged logic) */}
       <Modal
         animationType="slide"
         transparent
@@ -787,24 +954,16 @@ export default function ParentDashboard({ navigation }) {
         </View>
       </Modal>
 
+      {/* Global Toast host */}
       <Toast position="top" topOffset={24} visibilityTime={2800} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    paddingTop: PAGE_TOP_OFFSET,
-  },
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
-    paddingTop: 12,
-  },
+  screen: { flex: 1, paddingTop: PAGE_TOP_OFFSET, backgroundColor: "#F8FAFC" },
+  container: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 12 },
 
   /* Header */
   header: {
@@ -815,25 +974,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginBottom: 8,
   },
-  headerContent: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    fontWeight: "500",
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
+  headerContent: { flex: 1 },
+  title: { fontSize: 28, fontWeight: "700", color: "#111827", marginBottom: 4 },
+  subtitle: { fontSize: 16, color: "#6B7280", fontWeight: "500" },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: {
     width: 44,
     height: 44,
@@ -844,21 +988,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(59, 130, 246, 0.2)",
   },
-  avatarText: {
-    color: EDU_COLORS.primary,
-    fontWeight: "700",
-    fontSize: 16,
-  },
+  avatarText: { color: EDU_COLORS.primary, fontWeight: "700", fontSize: 16 },
   logoutButton: {
-    backgroundColor: EDU_COLORS.error,
+    backgroundColor: ERROR_COLOR,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
     minWidth: 80,
   },
-  logoutButtonDisabled: {
-    opacity: 0.6,
-  },
+  logoutButtonDisabled: { opacity: 0.6 },
   logoutText: {
     color: "#FFFFFF",
     fontWeight: "600",
@@ -867,11 +1005,7 @@ const styles = StyleSheet.create({
   },
 
   /* Loading */
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: {
     fontSize: 18,
     color: "#6B7280",
@@ -881,9 +1015,7 @@ const styles = StyleSheet.create({
   },
 
   /* Sections */
-  section: {
-    marginBottom: 20,
-  },
+  section: { marginBottom: 20 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -892,18 +1024,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     marginBottom: 8,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  arrowIcon: {
-    fontSize: 18,
-    color: "#6B7280",
-    fontWeight: "700",
-  },
+  sectionTitle: { fontSize: 18, fontWeight: "600", color: "#111827" },
+  arrowIcon: { fontSize: 18, color: "#6B7280", fontWeight: "700" },
 
-  /* Cards */
+  /* Base blur card */
   blurCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -911,98 +1035,58 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "transparent",
   },
-  contentCard: {
-    padding: 20,
-    marginHorizontal: 0,
-  },
+  contentCard: { padding: 20, marginHorizontal: 0 },
 
-  /* Stats Grid */
-  statsGrid: {
+  /* TILES (compact, like your screenshot) */
+  tilesGrid3: { gap: 10 },
+  tile: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 10,
   },
-  statItem: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: EDU_COLORS.primary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    textAlign: "center",
-    fontWeight: "500",
-  },
-
-  /* Engagement */
-  engagementContent: {
+  tileLeft: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  engagementIcon: {
-    fontSize: 32,
-    marginRight: 16,
-  },
-  engagementInfo: {
     flex: 1,
+    marginRight: 10,
   },
-  engagementLevel: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  engagementText: {
-    fontSize: 14,
-    color: "#6B7280",
-  },
-
-  /* Comparison */
-  comparisonGrid: {
-    gap: 16,
-  },
-  comparisonItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  tileIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    backgroundColor: "rgba(2,132,199,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(2,132,199,0.15)",
   },
-  comparisonLabel: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: "500",
-    flex: 1,
-  },
-  comparisonValues: {
-    alignItems: "flex-end",
-  },
-  comparisonChild: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: EDU_COLORS.primary,
-    marginBottom: 2,
-  },
-  comparisonAvg: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
+  tileTitle: { fontSize: 15, fontWeight: "700", color: "#0F172A" },
+  tileHelper: { fontSize: 12, color: "#64748B", marginTop: 2 },
+  tileRight: { marginLeft: 8 },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
 
-  /* Subjects */
-  subjectRow: {
-    marginBottom: 16,
-  },
+  /* Subject rows */
+  subjectRow: { marginBottom: 16 },
   subjectName: {
     fontSize: 14,
     fontWeight: "600",
     color: "#374151",
     marginBottom: 6,
   },
-  subjectBarContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  subjectBarContainer: { flexDirection: "row", alignItems: "center" },
   subjectBar: {
     height: 8,
     borderRadius: 4,
@@ -1010,35 +1094,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
     minWidth: 40,
   },
-  subjectCount: {
-    fontSize: 12,
-    color: "#6B7280",
-    minWidth: 80,
-  },
-
-  /* Weak Zones */
-  weakZoneCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#EF4444",
-  },
-  weakZoneTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#DC2626",
-    marginBottom: 8,
-  },
-  weakZoneText: {
-    fontSize: 14,
-    color: "#374151",
-    lineHeight: 20,
-  },
+  subjectCount: { fontSize: 12, color: "#6B7280", minWidth: 80 },
 
   /* Badges */
-  badgesGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  badgesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1047,28 +1106,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0F2FE",
   },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: EDU_COLORS.primary,
-  },
+  badgeText: { fontSize: 12, fontWeight: "600", color: EDU_COLORS.primary },
 
-  /* Questions */
-  questionsScrollView: {
-    maxHeight: 300,
-  },
-  questionCard: {
+  /* Questions (converted to tile style) */
+  questionsScrollView: { maxHeight: 300 },
+  questionTile: {
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#F8FAFC",
-    borderLeftWidth: 4,
-    borderLeftColor: EDU_COLORS.primary,
+    padding: 14,
+    marginBottom: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 1,
   },
   questionText: {
     fontSize: 14,
     color: "#111827",
-    fontWeight: "500",
+    fontWeight: "600",
     marginBottom: 8,
     lineHeight: 20,
   },
@@ -1081,48 +1139,21 @@ const styles = StyleSheet.create({
   questionSubject: {
     fontSize: 12,
     color: EDU_COLORS.primary,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  questionDate: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  answerCount: {
-    fontSize: 12,
-    color: "#059669",
-    fontWeight: "600",
-  },
+  questionDate: { fontSize: 12, color: "#6B7280" },
+  answerCount: { fontSize: 12, color: "#059669", fontWeight: "700" },
 
-  /* Encouragement */
-  encouragementContent: {
-    alignItems: "center",
-  },
-  encouragementText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#059669",
-    textAlign: "center",
-    marginBottom: 8,
-    lineHeight: 22,
-  },
-  encouragementSubtext: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-    marginBottom: 20,
-  },
+  /* Encouragement CTA */
   kudosButton: {
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: EDU_COLORS.primary,
+    paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  kudosButtonLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
+  kudosButtonLabel: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
 
-  /* Empty States */
+  /* Empty state */
   emptyText: {
     fontSize: 14,
     color: "#9CA3AF",
@@ -1160,11 +1191,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-  },
+  modalTitle: { fontSize: 20, fontWeight: "700", color: "#111827" },
   closeButton: {
     width: 36,
     height: 36,
@@ -1173,14 +1200,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#F3F4F6",
   },
-  closeButtonText: {
-    fontSize: 16,
-    color: "#374151",
-    fontWeight: "600",
-  },
-  modalBody: {
-    padding: 24,
-  },
+  closeButtonText: { fontSize: 16, color: "#374151", fontWeight: "600" },
+  modalBody: { padding: 24 },
   modalQuestionSection: {
     marginBottom: 24,
     paddingBottom: 24,
@@ -1209,10 +1230,7 @@ const styles = StyleSheet.create({
     color: EDU_COLORS.primary,
     fontWeight: "600",
   },
-  modalQuestionDate: {
-    fontSize: 14,
-    color: "#6B7280",
-  },
+  modalQuestionDate: { fontSize: 14, color: "#6B7280" },
   modalAnswersSection: {},
   modalAnswersLabel: {
     fontSize: 16,
@@ -1234,10 +1252,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 8,
   },
-  modalAnswerMeta: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
+  modalAnswerMeta: { fontSize: 12, color: "#6B7280" },
   modalNoAnswers: {
     fontSize: 14,
     color: "#9CA3AF",

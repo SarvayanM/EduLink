@@ -1,6 +1,5 @@
 // frontend/screens/QuestionFeedScreen.js
-import Screen from "../components/Screen";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -13,6 +12,7 @@ import {
   Modal,
   Animated,
   KeyboardAvoidingView,
+  Easing,
 } from "react-native";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,7 +22,7 @@ import Toast from "react-native-toast-message";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
 
 import {
-  EDU_COLORS,
+  EDU_COLORS as THEME,
   Surfaces,
   Buttons,
   PALETTE_60_30_10,
@@ -40,6 +40,14 @@ import {
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
+
+/* ---------- Color fallbacks for safety ---------- */
+const EDU_COLORS = {
+  primary: THEME?.primary || "#0A8CA0",
+  textPrimary: THEME?.textPrimary || "#0F172A",
+  textSecondary: THEME?.textSecondary || "#64748B",
+  shadow: THEME?.shadow || "#000",
+};
 
 /* ---------- Constants ---------- */
 const PAGE_TOP_OFFSET = 4;
@@ -66,39 +74,35 @@ function useToast() {
         topOffset:
           topOffset || Platform.select({ ios: 48, android: 28, default: 32 }),
         visibilityTime: 3200,
-        props: {
-          style: { zIndex: 100000, elevation: 50000 },
-        },
       });
     },
     [topOffset]
   );
 }
 
+/* ---------- Compact, tile-like loading card ---------- */
 const LoadingCard = ({
   title = "Loading Q&A",
   subtitle = "Fetching the latest unanswered questions…",
 }) => {
-  const anim = React.useRef(new Animated.Value(0)).current;
+  const anim = useRef(new Animated.Value(0)).current;
   const [trackW, setTrackW] = React.useState(0);
 
-  React.useEffect(() => {
-    const run = Animated.loop(
+  useEffect(() => {
+    const loop = Animated.loop(
       Animated.timing(anim, {
         toValue: 1,
         duration: 1200,
         useNativeDriver: true,
-        easing: Animated.Easing?.inOut?.(Animated.Easing.cubic) || undefined,
+        easing: Easing.inOut(Easing.cubic),
       })
     );
-    run.start();
+    loop.start();
     return () => {
       anim.stopAnimation(() => anim.setValue(0));
-      // loop stops automatically on unmount via return()
     };
   }, [anim]);
 
-  // 80 = bar width; start just outside left, end flush to right
   const translateX =
     trackW > 0
       ? anim.interpolate({
@@ -109,9 +113,9 @@ const LoadingCard = ({
 
   return (
     <View style={styles.loadingCenterWrap}>
-      <View style={styles.loadingCard}>
-        <Text style={styles.loadingTitle}>{title}</Text>
-        <Text style={styles.loadingSubtitle}>{subtitle}</Text>
+      <View style={styles.tileCard}>
+        <Text style={styles.tileTitle}>⏳ {title}</Text>
+        <Text style={styles.tileSubtitle}>{subtitle}</Text>
 
         <View
           style={styles.progressTrack}
@@ -126,6 +130,46 @@ const LoadingCard = ({
         </View>
       </View>
     </View>
+  );
+};
+
+/* ---------- Animated appearance wrapper for list items ---------- */
+const Appear = ({ children, delay = 0, style }) => {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, {
+      toValue: 1,
+      duration: 260,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [a, delay]);
+  return (
+    <Animated.View
+      style={[
+        {
+          opacity: a,
+          transform: [
+            {
+              translateY: a.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, 0],
+              }),
+            },
+            {
+              scale: a.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.98, 1],
+              }),
+            },
+          ],
+        },
+        style,
+      ]}
+    >
+      {children}
+    </Animated.View>
   );
 };
 
@@ -334,67 +378,74 @@ export default function QuestionFeedScreen() {
     (q) => !q.answers || q.answers.length === 0
   ).length;
 
+  const unansweredSafeCount = Number.isFinite(Number(unansweredCount))
+    ? Number(unansweredCount)
+    : 0;
+
   /* ---------- Render item ---------- */
-  const renderQuestionItem = ({ item: q }) => {
+  const renderQuestionItem = ({ item: q, index }) => {
     if (q.answers?.length > 0) return null;
     const isMyQuestion = q.askedBy === auth.currentUser?.uid;
     const created = q.createdAt?.toDate?.()?.toLocaleDateString?.() || "Recent";
 
     return (
-      <BlurCard
-        style={[styles.questionCard, isMyQuestion && styles.questionCardMine]}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.questionText}>{q.question}</Text>
-          {q.image && (
-            <Pressable
-              accessibilityRole="imagebutton"
-              onPress={() => {
-                setSelectedImage(q.image);
-                setShowImageModal(true);
-              }}
-              style={styles.imagePressable}
-            >
-              <Image source={{ uri: q.image }} style={styles.questionImage} />
-            </Pressable>
-          )}
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.footerTags}>
-            {(userRole === "teacher" || userRole === "tutor") && q.grade && (
-              <View style={styles.tagPill}>
-                <Text style={styles.tagText}>{`Grade ${q.grade}`}</Text>
-              </View>
-            )}
-            {!!q.subject && (
-              <View style={styles.tagPill}>
-                <Text style={styles.tagText}>📚 {q.subject}</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.footerMeta}>
-            <Text style={styles.metaText}>
-              {q.askedByName || "Anonymous"} • {created}
-            </Text>
-            {!isMyQuestion && (
-              <Button
-                mode="contained"
-                compact
+      <Appear delay={index * 20}>
+        <BlurCard
+          style={[styles.questionCard, isMyQuestion && styles.questionCardMine]}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={styles.questionText}>{q.question}</Text>
+            {q.image && (
+              <Pressable
+                accessibilityRole="imagebutton"
                 onPress={() => {
-                  setSelectedQuestion(q);
-                  setShowAnswerForm(true);
+                  setSelectedImage(q.image);
+                  setShowImageModal(true);
                 }}
-                style={styles.answerBtn}
-                labelStyle={styles.answerBtnLabel}
+                style={styles.imagePressable}
               >
-                Answer
-              </Button>
+                <Image source={{ uri: q.image }} style={styles.questionImage} />
+              </Pressable>
             )}
           </View>
-        </View>
-      </BlurCard>
+
+          <View style={styles.cardFooter}>
+            <View style={styles.footerTags}>
+              {(userRole === "teacher" || userRole === "tutor") && q.grade && (
+                <View style={styles.tagPill}>
+                  <Text style={styles.tagText}>🎓 Grade {q.grade}</Text>
+                </View>
+              )}
+              {!!q.subject && (
+                <View style={styles.tagPill}>
+                  <Text style={styles.tagText}>📚 {q.subject}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.footerMeta}>
+              <Text style={styles.metaText}>
+                👤 {q.askedByName || "Anonymous"} • 📅 {created}
+              </Text>
+              {!isMyQuestion && (
+                <Button
+                  mode="contained"
+                  compact
+                  icon="reply"
+                  onPress={() => {
+                    setSelectedQuestion(q);
+                    setShowAnswerForm(true);
+                  }}
+                  style={styles.answerBtn}
+                  labelStyle={styles.answerBtnLabel}
+                >
+                  Answer
+                </Button>
+              )}
+            </View>
+          </View>
+        </BlurCard>
+      </Appear>
     );
   };
 
@@ -410,19 +461,29 @@ export default function QuestionFeedScreen() {
         renderItem={renderQuestionItem}
         ListHeaderComponent={
           <>
-            {/* Header / Title */}
-            <BlurCard style={styles.headerCard}>
-              <View style={styles.headerRow}>
-                <Text style={styles.title}>Q&A Feed</Text>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unansweredCount}</Text>
+            {/* Header / Title — compact tile like your reference image */}
+            <View style={styles.tile}>
+              <View style={[styles.tileHeaderRow, styles.px16]}>
+                <Text style={styles.tileTitle}>🧠 Knowledge Exchange</Text>
+
+                <View
+                  style={styles.pill}
+                  accessibilityRole="text"
+                  accessibilityLabel={`Unanswered ${unansweredSafeCount}`}
+                >
+                  <Text style={styles.pillLabel}>Unanswered</Text>
+                  <Text style={styles.pillValue}>{unansweredSafeCount}</Text>
                 </View>
               </View>
-              <Text style={styles.subtitle}>Unanswered questions</Text>
-            </BlurCard>
 
-            {/* Subject chips */}
-            <View style={styles.chipsCard}>
+              <Text style={[styles.tileSubtitle, styles.px16]}>
+                Engage with unanswered questions and share your insights
+              </Text>
+            </View>
+
+            {/* Subject filter chips inside a compact tile */}
+            <View style={styles.tileCard}>
+              <Text style={styles.tileTitle}>🎯 Subjects</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -452,6 +513,7 @@ export default function QuestionFeedScreen() {
                           active && styles.chipTextActive,
                         ]}
                       >
+                        {active ? "✓ " : ""}
                         {subject}
                       </Text>
                     </Pressable>
@@ -460,9 +522,10 @@ export default function QuestionFeedScreen() {
               </ScrollView>
             </View>
 
-            {/* Grade chips (teacher/tutor) */}
+            {/* Grade filter chips (teacher/tutor) inside a compact tile */}
             {(userRole === "teacher" || userRole === "tutor") && (
-              <View style={styles.chipsCard}>
+              <View style={styles.tileCard}>
+                <Text style={styles.tileTitle}>🏷️ Grades</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -504,6 +567,7 @@ export default function QuestionFeedScreen() {
                               active && styles.chipTextActive,
                             ]}
                           >
+                            {active ? "✓ " : ""}
                             {grade}
                           </Text>
                         </Pressable>
@@ -525,10 +589,8 @@ export default function QuestionFeedScreen() {
         }
         ListEmptyComponent={
           !loading ? (
-            <View style={styles.emptyList}>
-              <Text style={styles.emptyText}>
-                No questions match your filters yet.
-              </Text>
+            <View style={styles.tileCard}>
+              <Text style={styles.emptyTitle}>🔍 No matches yet</Text>
               <Text style={styles.emptySubText}>
                 Try widening your criteria or check back later. ✨
               </Text>
@@ -554,7 +616,7 @@ export default function QuestionFeedScreen() {
           >
             <View style={styles.modalCardSolid}>
               <View style={styles.modalHeaderSolid}>
-                <Text style={styles.modalTitle}>Submit Your Answer</Text>
+                <Text style={styles.modalTitle}>✍️ Submit Your Answer</Text>
                 <Pressable
                   accessibilityRole="button"
                   style={styles.modalClose}
@@ -601,14 +663,14 @@ export default function QuestionFeedScreen() {
                   placeholder="Type your detailed answer here..."
                   outlineStyle={{
                     borderRadius: 12,
-                    borderColor: Surfaces.border,
+                    borderColor: Surfaces?.border ?? "#1F2937",
                   }}
                   style={styles.answerInput}
                   theme={{
                     colors: {
                       primary: EDU_COLORS.primary,
-                      surfaceVariant: Surfaces.solid,
-                      onSurfaceVariant: EDU_COLORS.textMuted, // keep styles intact; use valid key
+                      surfaceVariant: Surfaces?.solid ?? "#0B1220",
+                      onSurfaceVariant: EDU_COLORS.textSecondary,
                     },
                   }}
                 />
@@ -616,6 +678,7 @@ export default function QuestionFeedScreen() {
                 <View style={styles.modalBtnRow}>
                   <Button
                     mode="contained"
+                    icon="send"
                     onPress={handleSubmitAnswer}
                     style={styles.submitBtn}
                     labelStyle={styles.submitLabel}
@@ -624,6 +687,7 @@ export default function QuestionFeedScreen() {
                   </Button>
                   <Button
                     mode="outlined"
+                    icon="close"
                     onPress={() => setShowAnswerForm(false)}
                     style={styles.cancelBtn}
                     labelStyle={styles.cancelLabel}
@@ -693,109 +757,137 @@ export default function QuestionFeedScreen() {
   );
 }
 
-/* ===================== Styles (UNCHANGED) ===================== */
+/* ===================== Styles ===================== */
+const CARD_BG = Surfaces?.solid ?? "#FFFFFF";
+const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     paddingTop: PAGE_TOP_OFFSET,
+    backgroundColor: "#F8FAFC",
   },
+
+  /* ---- Generic “tile” (header) ---- */
+  tile: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2,
+    paddingVertical: 14,
+  },
+  px16: { paddingHorizontal: 16 },
+
+  tileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  tileTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+  },
+  tileSubtitle: {
+    fontSize: 13.5,
+    color: EDU_COLORS.textSecondary,
+    marginTop: 2,
+  },
+
+  /* ---- Pill badge ---- */
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(2,132,199,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(2,132,199,0.18)",
+  },
+  pillLabel: {
+    fontSize: 12,
+    color: "#0F4C5C",
+    marginRight: 6,
+    fontWeight: "600",
+  },
+  pillValue: {
+    fontSize: 12,
+    color: EDU_COLORS.primary,
+    fontWeight: "800",
+    minWidth: 18,
+    textAlign: "center",
+  },
+
+  /* ---- Generic tileCard (filters/empty/loading) ---- */
+  tileCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+
+  /* ---- Blur card (question item) ---- */
   blurCard: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     overflow: "hidden",
     backgroundColor: "transparent",
     paddingHorizontal: 16,
   },
-  headerCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  chipsCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: EDU_COLORS.textSecondary,
-    fontWeight: "600",
-  },
-  badge: {
-    marginLeft: "auto",
-    backgroundColor: Buttons.accentBg,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  badgeText: {
-    color: Buttons.accentText,
-    fontWeight: "800",
-    fontSize: 14,
-    minWidth: 14,
-    textAlign: "center",
-  },
-  chipsRow: {
-    paddingHorizontal: 2,
-    gap: 8,
-  },
+
+  chipsRow: { paddingHorizontal: 2, gap: 8 },
   chip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Surfaces.elevated,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: Surfaces.border,
+    borderColor: "#E5E7EB",
   },
   chipActive: {
-    backgroundColor: Buttons.primaryBg,
-    borderColor: Buttons.primaryBg,
+    backgroundColor: Buttons?.primaryBg || "#0EA5E9",
+    borderColor: Buttons?.primaryBg || "#0EA5E9",
   },
   chipText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     color: EDU_COLORS.textPrimary,
   },
   chipTextActive: {
-    color: Buttons.primaryText,
-    fontWeight: "700",
+    color: Buttons?.primaryText || "#FFFFFF",
+    fontWeight: "800",
   },
-  list: {
-    flex: 1,
-    marginTop: 6,
-  },
-  listContainer: {
-    paddingHorizontal: 0,
-    paddingBottom: 120,
-  },
-  emptyList: {
-    padding: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 20,
-    marginHorizontal: 16,
-    backgroundColor: Surfaces.solid,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Surfaces.border,
-  },
-  emptyText: {
+
+  list: { flex: 1, marginTop: 6 },
+  listContainer: { paddingHorizontal: 0, paddingBottom: 120 },
+
+  /* ---- Empty state as a tile ---- */
+  emptyTitle: {
     fontSize: 18,
     color: EDU_COLORS.textPrimary,
-    fontWeight: "700",
+    fontWeight: "800",
     textAlign: "center",
     marginBottom: 4,
   },
@@ -804,56 +896,45 @@ const styles = StyleSheet.create({
     color: EDU_COLORS.textSecondary,
     textAlign: "center",
   },
+
+  /* ---- Question item ---- */
   questionCard: {
     marginHorizontal: 16,
     marginBottom: 12,
     padding: 18,
   },
   questionCardMine: {
-    backgroundColor: PALETTE_60_30_10.color30,
-    borderColor: PALETTE_60_30_10.color30,
-    tint: "dark",
+    backgroundColor: PALETTE_60_30_10?.color30 || "rgba(14,165,233,0.08)",
+    borderColor: PALETTE_60_30_10?.color30 || Buttons?.primaryBg || "#0EA5E9",
   },
-  cardHeader: {
-    marginBottom: 12,
-  },
+  cardHeader: { marginBottom: 12 },
   questionText: {
     fontSize: 16,
     lineHeight: 24,
-    fontWeight: "500",
+    fontWeight: "600",
     color: EDU_COLORS.textPrimary,
   },
-  imagePressable: {
-    marginTop: 10,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  questionImage: {
-    width: "100%",
-    height: 180,
-    borderRadius: 10,
-  },
+  imagePressable: { marginTop: 10, borderRadius: 10, overflow: "hidden" },
+  questionImage: { width: "100%", height: 180, borderRadius: 10 },
   cardFooter: {
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Surfaces.border,
+    borderTopColor: CARD_BORDER,
     flexDirection: "column",
   },
-  footerTags: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 8,
-  },
+  footerTags: { flexDirection: "row", gap: 8, marginBottom: 8 },
   tagPill: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: EDU_COLORS.primary + "1A",
+    backgroundColor: (EDU_COLORS.primary || "#0ea5e9") + "1A",
+    borderWidth: 1,
+    borderColor: (EDU_COLORS.primary || "#0ea5e9") + "33",
   },
   tagText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     color: EDU_COLORS.primary,
   },
   footerMeta: {
@@ -864,21 +945,23 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 13,
     color: EDU_COLORS.textSecondary,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   answerBtn: {
-    backgroundColor: Buttons.primaryBg,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    minHeight: 34,
+    backgroundColor: Buttons?.primaryBg || "#0EA5E9",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    minHeight: 36,
     justifyContent: "center",
   },
   answerBtnLabel: {
-    color: Buttons.primaryText,
-    fontSize: 13,
-    fontWeight: "700",
+    color: Buttons?.primaryText || "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "800",
     letterSpacing: 0.1,
   },
+
+  /* ---- Modals ---- */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.75)",
@@ -886,23 +969,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
   },
-  keyboardAvoidingView: {
-    width: "100%",
-    alignItems: "center",
-  },
+  keyboardAvoidingView: { width: "100%", alignItems: "center" },
   modalCardSolid: {
     width: "100%",
     maxWidth: 580,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: CARD_BG,
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     overflow: "hidden",
     ...Platform.select({
       ios: {
-        shadowColor: EDU_COLORS.shadow || "#000",
+        shadowColor: EDU_COLORS.shadow,
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.15,
+        shadowOpacity: 0.12,
         shadowRadius: 15,
       },
       android: { elevation: 12 },
@@ -911,16 +991,16 @@ const styles = StyleSheet.create({
   modalHeaderSolid: {
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: Surfaces.elevated,
+    backgroundColor: Surfaces?.elevated ?? "#F8FAFC",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Surfaces.border,
+    borderBottomColor: CARD_BORDER,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     color: EDU_COLORS.textPrimary,
   },
   modalClose: {
@@ -929,9 +1009,9 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Surfaces.solid,
+    backgroundColor: "#FFFFFF",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   modalCloseText: {
     fontSize: 20,
@@ -944,65 +1024,54 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
-    backgroundColor: Surfaces.elevated,
+    backgroundColor: "#FFFFFF",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   previewLabel: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     color: EDU_COLORS.textSecondary,
     marginBottom: 6,
   },
-  previewText: {
-    fontSize: 16,
-    color: EDU_COLORS.textPrimary,
-    lineHeight: 24,
-  },
-  previewDivider: {
-    marginVertical: 10,
-    backgroundColor: Surfaces.border,
-  },
-  previewMeta: {
-    fontSize: 13,
-    color: EDU_COLORS.textSecondary,
-  },
+  previewText: { fontSize: 16, color: EDU_COLORS.textPrimary, lineHeight: 24 },
+  previewDivider: { marginVertical: 10, backgroundColor: CARD_BORDER },
+  previewMeta: { fontSize: 13, color: EDU_COLORS.textSecondary },
   answerInput: {
     borderRadius: 12,
     fontSize: 15,
     textAlignVertical: "top",
     marginBottom: 20,
     minHeight: 120,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: "#FFFFFF",
   },
-  modalBtnRow: {
-    flexDirection: "row",
-    columnGap: 10,
-  },
+  modalBtnRow: { flexDirection: "row", columnGap: 10 },
   submitBtn: {
     flex: 2,
-    backgroundColor: Buttons.primaryBg,
-    borderRadius: 10,
+    backgroundColor: Buttons?.primaryBg || "#0EA5E9",
+    borderRadius: 12,
     minHeight: 48,
     justifyContent: "center",
   },
   submitLabel: {
-    color: Buttons.primaryText,
+    color: Buttons?.primaryText || "#FFFFFF",
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   cancelBtn: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     minHeight: 48,
     justifyContent: "center",
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   cancelLabel: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: EDU_COLORS.textPrimary,
   },
+
+  /* ---- Image Modal ---- */
   imageModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.85)",
@@ -1026,17 +1095,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.5)",
   },
-  iconBtnText: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  modalImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 8,
-  },
-  /* Centered wrap that respects safe areas and stays inline */
+  iconBtnText: { color: "#FFFFFF", fontSize: 20, fontWeight: "700" },
+  modalImage: { width: "100%", height: "100%", borderRadius: 8 },
+
+  /* ---- Loading ---- */
   loadingCenterWrap: {
     width: "100%",
     minHeight: 220,
@@ -1046,42 +1108,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  /* Card that matches EduLink surface language (no blur) */
-  loadingCard: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 16,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
-    borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#1F2937",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-
-  loadingTitle: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.textPrimary ?? "#0B1220",
-    textAlign: "center",
-  },
-
-  loadingSubtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
-    textAlign: "center",
-    marginBottom: 8,
-  },
   progressTrack: {
     width: "100%",
     height: 8,
     borderRadius: 8,
-    backgroundColor: Surfaces.border,
+    backgroundColor: CARD_BORDER,
     overflow: "hidden",
     marginTop: 8,
   },
@@ -1089,6 +1120,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 8,
     borderRadius: 8,
-    backgroundColor: Buttons.primaryBg,
+    backgroundColor: Buttons?.primaryBg || "#0EA5E9",
   },
 });

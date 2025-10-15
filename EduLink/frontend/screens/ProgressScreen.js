@@ -1,5 +1,4 @@
 // frontend/screens/ProgressScreen.js
-import Screen from "../components/Screen";
 import Toast from "react-native-toast-message";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -10,15 +9,10 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Platform,
   Animated,
   Easing,
   ActivityIndicator,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
 import { auth, db } from "../services/firebaseAuth";
 import {
   doc,
@@ -36,7 +30,6 @@ import {
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
-
 import { BlurView } from "expo-blur";
 
 /* ---------- Small UI helpers (blur card) ---------- */
@@ -48,19 +41,21 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
 
 const PAGE_TOP_OFFSET = 8;
 
+/* ---------- Loading strip (compact tile) ---------- */
 const LoadingStrip = ({
   title = "Loading Your Progress ...",
   subtitle = "Personalizing stats and leaderboard…",
 }) => {
-  const anim = React.useRef(new Animated.Value(0)).current;
-  const [trackW, setTrackW] = React.useState(0);
+  const anim = useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const loop = Animated.loop(
       Animated.timing(anim, {
         toValue: 1,
         duration: 1200,
         useNativeDriver: true,
+        easing: Easing.inOut(Easing.cubic),
       })
     );
     loop.start();
@@ -83,7 +78,6 @@ const LoadingStrip = ({
         {subtitle ? (
           <Text style={styles.loadingSubtitle}>{subtitle}</Text>
         ) : null}
-
         <View
           style={styles.progressTrack}
           onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
@@ -131,61 +125,50 @@ export default function ProgressScreen() {
     fetchUserData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const barAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!leaderboard?.length) return;
-    // build values once per render of leaderboard
+    // build values once per leaderboard render
     lbAnimVals.length = 0;
     leaderboard.forEach(() => lbAnimVals.push(new Animated.Value(0)));
-
     Animated.stagger(
       60,
       lbAnimVals.map((v) =>
         Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: true })
       )
     ).start();
-  }, [leaderboard]);
+  }, [leaderboard, lbAnimVals]);
 
   useEffect(() => {
     if (loading) return;
 
-    // Fade in the whole screen
     Animated.timing(mountFade, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
 
-    // Pop the points circle
     Animated.spring(pointsScale, {
       toValue: 1,
       friction: 5,
       useNativeDriver: true,
     }).start();
 
-    // Fill the progress bar to the actual fraction
     Animated.timing(progressAnim, {
       toValue: 1,
       duration: 800,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: false, // width animation can't use native driver
+      useNativeDriver: false, // width animation
     }).start();
-  }, [loading]);
-
-  // Interpolate to slide the bar from left to right
-  const barTranslate = barAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-80, 280], // will be clamped by container width; feels smooth on phones & tablets
-  });
+  }, [loading, mountFade, pointsScale, progressAnim]);
 
   const fetchUserData = async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
 
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data() || {};
+      const userDocSnap = await getDoc(doc(db, "users", user.uid));
+      const userData = userDocSnap.data() || {};
       const grade = userData.grade;
       const currentRole = userData.role || "student";
       setUserGrade(grade);
@@ -225,7 +208,7 @@ export default function ProgressScreen() {
         currentLevelProgress,
       });
 
-      await fetchLeaderboard(grade, points, userData.name || "You");
+      await fetchLeaderboard(grade);
     } catch (e) {
       console.error("Error fetching user data:", e);
     } finally {
@@ -245,7 +228,7 @@ export default function ProgressScreen() {
       for (const u of usersSnapshot.docs) {
         const data = u.data() || {};
         const userId = u.id;
-        const points = data.points || 0; // source of truth
+        const points = data.points || 0;
         leaderboardData.push({
           userId,
           name: data.displayName || data.name || "Anonymous",
@@ -285,12 +268,7 @@ export default function ProgressScreen() {
     }
   };
 
-  const progressToNext =
-    userStats.currentLevelProgress / (POINTS_PER_LEVEL || 1);
-
-  if (loading) {
-    return <LoadingStrip />;
-  }
+  if (loading) return <LoadingStrip />;
 
   return (
     <Animated.ScrollView
@@ -298,13 +276,13 @@ export default function ProgressScreen() {
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header */}
-      <BlurCard style={[styles.chatBubble]}>
-        <Text style={styles.headerTitle}>Progress & Leaderboard</Text>
+      {/* Header (compact card) */}
+      <BlurCard style={styles.chatBubble}>
+        <Text style={styles.headerTitle}>📈 Progress & Leaderboard</Text>
       </BlurCard>
 
-      {/* Points + Level Progress */}
-      <BlurCard style={[styles.chatBubble]}>
+      {/* Points + Level Progress (compact card) */}
+      <BlurCard style={styles.chatBubble}>
         <View style={styles.pointsRow}>
           <Animated.View
             style={[
@@ -315,6 +293,7 @@ export default function ProgressScreen() {
             <Text style={styles.pointsNumber}>{userStats.points}</Text>
             <Text style={styles.pointsLabel}>Points</Text>
           </Animated.View>
+
           <Text style={styles.rankText}>Rank {userStats.rank}</Text>
         </View>
 
@@ -323,6 +302,7 @@ export default function ProgressScreen() {
           <Text style={styles.progressLabel}>
             Progress to Level {userStats.level + 1}
           </Text>
+
           <View style={styles.progressBar}>
             <Animated.View
               style={[
@@ -334,9 +314,7 @@ export default function ProgressScreen() {
                       "0%",
                       `${Math.min(
                         100,
-                        (userStats.currentLevelProgress /
-                          (POINTS_PER_LEVEL || 1)) *
-                          100
+                        (userStats.currentLevelProgress / 200) * 100
                       ).toFixed(2)}%`,
                     ],
                   }),
@@ -344,8 +322,9 @@ export default function ProgressScreen() {
               ]}
             />
           </View>
+
           <Text style={styles.progressText}>
-            {userStats.currentLevelProgress}/{POINTS_PER_LEVEL} points
+            {userStats.currentLevelProgress}/200 points
           </Text>
 
           {userStats.points >= 100 && userStats.points < 200 && (
@@ -371,31 +350,26 @@ export default function ProgressScreen() {
         </View>
       </BlurCard>
 
-      {/* Activity */}
-      <BlurCard style={[styles.chatBubble]}>
+      {/* Activity (compact tiles inside) */}
+      <BlurCard style={styles.chatBubble}>
         <Text style={styles.cardTitle}>My Activity</Text>
         <View style={styles.activityGrid}>
-          <View style={styles.activityItem}>
-            <View style={styles.activityIconWrap}>
-              <Text style={styles.activityIcon}>❓</Text>
-            </View>
-            <Text style={styles.activityNumber}>
-              {userStats.questionsAsked}
-            </Text>
-            <Text style={styles.activityLabel}>Questions Asked</Text>
+          <View style={styles.tileCard}>
+            <Text style={styles.tileIcon}>❓</Text>
+            <Text style={styles.tileNumber}>{userStats.questionsAsked}</Text>
+            <Text style={styles.tileLabel}>Questions Asked</Text>
           </View>
-          <View style={styles.activityItem}>
-            <View style={styles.activityIconWrap}>
-              <Text style={styles.activityIcon}>💬</Text>
-            </View>
-            <Text style={styles.activityNumber}>{userStats.answersGiven}</Text>
-            <Text style={styles.activityLabel}>Answers Given</Text>
+
+          <View style={styles.tileCard}>
+            <Text style={styles.tileIcon}>💬</Text>
+            <Text style={styles.tileNumber}>{userStats.answersGiven}</Text>
+            <Text style={styles.tileLabel}>Answers Given</Text>
           </View>
         </View>
       </BlurCard>
 
-      {/* Badges */}
-      <BlurCard style={[styles.chatBubble]}>
+      {/* Badges (chip tiles) */}
+      <BlurCard style={styles.chatBubble}>
         <Text style={styles.cardTitle}>Achievements</Text>
         <View style={styles.badgesGrid}>
           {userStats.badges.length === 0 ? (
@@ -413,8 +387,8 @@ export default function ProgressScreen() {
         </View>
       </BlurCard>
 
-      {/* Leaderboard */}
-      <BlurCard style={[styles.chatBubble]}>
+      {/* Leaderboard (rows with subtle highlight) */}
+      <BlurCard style={styles.chatBubble}>
         <Text style={styles.cardTitle}>Class Leaderboard</Text>
         {leaderboard.length === 0 ? (
           <Text style={styles.emptyLeaderboard}>
@@ -515,19 +489,20 @@ export default function ProgressScreen() {
 }
 
 /* ===================== Styles (tokens-first) ===================== */
-const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
+const CARD_BG = EDU_COLORS.surfaceSolid ?? "#0B1220";
+const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
 
+const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    paddingTop: PAGE_TOP_OFFSET, // keeps everything aligned under the header rail
+    paddingTop: PAGE_TOP_OFFSET,
   },
 
   /* Shared blur card base */
   blurCard: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     overflow: "hidden",
     backgroundColor: "transparent",
   },
@@ -544,14 +519,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: EDU_COLORS.textPrimary,
   },
-  headerHalo: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    top: -40,
-    right: -40,
-  },
 
   /* Points + progress */
   pointsRow: {
@@ -566,29 +533,31 @@ const styles = StyleSheet.create({
     borderRadius: 52,
     backgroundColor: EDU_COLORS.gray50,
     borderWidth: 3,
-    borderColor: PALETTE_60_30_10.accent10,
+    borderColor: PALETTE_60_30_10.accent60 + 22,
     alignItems: "center",
     justifyContent: "center",
   },
   pointsNumber: {
     fontSize: 28,
     fontWeight: "900",
-    color: PALETTE_60_30_10.accent10,
+    color: Buttons.accentBg,
   },
   pointsLabel: { fontSize: 12, color: EDU_COLORS.gray600, fontWeight: "800" },
   rankText: {
     fontSize: 16,
     fontWeight: "900",
     backgroundColor: Buttons.primaryBg,
-    color: "#FFFF",
-    padding: 4,
+    color: "#FFFFFF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
 
   progressCol: { marginTop: 12 },
   levelText: {
     fontSize: 16,
     fontWeight: "900",
-    color: PALETTE_60_30_10.accent10,
+    color: Buttons.accentBg + "88",
     marginBottom: 6,
   },
   progressLabel: {
@@ -604,7 +573,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: EDU_COLORS.gray200,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   progressFill: {
     height: "100%",
@@ -618,7 +587,43 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  /* --- Missing / new styles used by LoadingStrip --- */
+  /* Loading strip styles */
+  loadingCenterWrap: {
+    width: "100%",
+    minHeight: 220,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  loadingTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "700",
+    color: EDU_COLORS.textPrimary ?? "#0B1220",
+    textAlign: "center",
+  },
+  loadingSubtitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
+    textAlign: "center",
+    marginBottom: 8,
+  },
   progressTrack: {
     width: "100%",
     height: 8,
@@ -634,42 +639,29 @@ const styles = StyleSheet.create({
     backgroundColor: Buttons.primaryBg,
   },
 
-  /* --- Small UI polish/fixes --- */
-  rankText: {
-    fontSize: 16,
+  /* Activity tiles (compact cards like the reference image) */
+  activityGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  tileCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tileIcon: { fontSize: 18, marginBottom: 6 },
+  tileNumber: {
+    fontSize: 20,
     fontWeight: "900",
-    backgroundColor: Buttons.primaryBg,
-    color: "#FFFFFF", // was "#FFFF"
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    color: PALETTE_60_30_10.accent60,
   },
-
-  lbRowMe: {
-    marginHorizontal: -18,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    backgroundColor: (EDU_COLORS.primary ?? "#088395") + "1A", // subtle highlight
-  },
-
-  headerHalo: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    top: -40,
-    right: -40,
-    backgroundColor: (PALETTE_60_30_10?.accent10 ?? "#7C3AED") + "22", // faint halo
-  },
-
-  badgePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    alignSelf: "center",
-    marginTop: 10,
-  },
-  badgePillText: { color: "#fff", fontSize: 12, fontWeight: "900" },
+  tileLabel: { fontSize: 12, color: EDU_COLORS.gray600, marginTop: 2 },
 
   /* Section titles */
   cardTitle: {
@@ -677,38 +669,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: EDU_COLORS.textPrimary,
     marginBottom: 10,
-  },
-
-  /* Activity */
-  activityGrid: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    gap: 10,
-  },
-  activityItem: { alignItems: "center", flex: 1 },
-  activityIconWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: EDU_COLORS.gray100,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-  },
-  activityIcon: { fontSize: 20 },
-  activityNumber: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: PALETTE_60_30_10.accent10,
-    marginTop: 2,
-  },
-  activityLabel: {
-    fontSize: 12,
-    color: EDU_COLORS.gray600,
-    textAlign: "center",
-    marginTop: 2,
   },
 
   /* Badges */
@@ -720,21 +680,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    ...Platform.select({
-      ios: {
-        shadowColor: Buttons.accentBg,
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-        shadowOffset: { width: 0, height: 1 },
-      },
-      android: { elevation: 1 },
-    }),
+    backgroundColor: Buttons.accentBg,
   },
   badgeEmoji: { fontSize: 16 },
-  badgeText: { fontSize: 12, fontWeight: "800", color: "#FFFFFF" },
+  badgeText: { fontSize: 12, fontWeight: "800", color: Buttons.accentText },
   emptyBadgeText: {
     fontSize: 14,
-    color: "#FFFFFF",
+    color: EDU_COLORS.textSecondary,
     fontStyle: "italic",
     textAlign: "center",
     width: "100%",
@@ -748,12 +700,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Surfaces.border,
+    borderTopColor: CARD_BORDER,
   },
   lbRowMe: {
-    marginHorizontal: -18,
-    paddingHorizontal: 18,
+    marginHorizontal: -14,
+    paddingHorizontal: 14,
     borderRadius: 10,
+    backgroundColor: (EDU_COLORS.primary ?? "#088395") + "1A",
   },
   lbLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   lbRank: {
@@ -767,7 +720,7 @@ const styles = StyleSheet.create({
   lbPoints: {
     fontSize: 14,
     fontWeight: "900",
-    color: PALETTE_60_30_10.accent10,
+    color: PALETTE_60_30_10.accent60,
   },
 
   avatar: { width: 36, height: 36, borderRadius: 18 },
@@ -779,7 +732,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   avatarFallbackText: {
     fontSize: 16,
@@ -788,16 +741,16 @@ const styles = StyleSheet.create({
   },
   emptyLeaderboard: {
     fontSize: 14,
-    color: EDU_COLORS.gray500,
+    color: EDU_COLORS.textSecondary,
     textAlign: "center",
     fontStyle: "italic",
     paddingVertical: 14,
   },
 
-  /* Image Modal (overlay requested) */
+  /* Image Modal */
   imageModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // requested overlay
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -819,46 +772,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     marginTop: 14,
-  },
-  /* Centered wrap that respects safe areas and stays inline */
-  loadingCenterWrap: {
-    width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  /* Card that matches EduLink surface language (no blur) */
-  loadingCard: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 16,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
-    borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#1F2937",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-
-  loadingTitle: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.textPrimary ?? "#0B1220",
-    textAlign: "center",
-  },
-
-  loadingSubtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
-    textAlign: "center",
-    marginBottom: 8,
   },
 });

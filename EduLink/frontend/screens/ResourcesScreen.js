@@ -1,5 +1,11 @@
 import Toast from "react-native-toast-message";
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -43,9 +49,32 @@ import {
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
-
 import { BlurView } from "expo-blur";
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+
+/* ---------- Small helpers & fallbacks ---------- */
+const C = {
+  infoLight: EDU_COLORS?.infoLight ?? "#E0F2FE",
+  infoDark: EDU_COLORS?.infoDark ?? "#075985",
+  primaryLight: EDU_COLORS?.primaryLight ?? "#93C5FD",
+  primaryXL: EDU_COLORS?.primaryExtraLight ?? "#EFF6FF",
+  success: EDU_COLORS?.success ?? "#16A34A",
+  gray50: EDU_COLORS?.gray50 ?? "#F9FAFB",
+  gray100: EDU_COLORS?.gray100 ?? "#F3F4F6",
+  gray200: EDU_COLORS?.gray200 ?? "#E5E7EB",
+  gray300: EDU_COLORS?.gray300 ?? "#D1D5DB",
+  gray400: EDU_COLORS?.gray400 ?? "#9CA3AF",
+  gray500: EDU_COLORS?.gray500 ?? "#6B7280",
+  gray600: EDU_COLORS?.gray600 ?? "#4B5563",
+  gray700: EDU_COLORS?.gray700 ?? "#374151",
+  gray800: EDU_COLORS?.gray800 ?? "#1F2937",
+  gray900: EDU_COLORS?.gray900 ?? "#111827",
+  primary: EDU_COLORS?.primary ?? "#0A8CA0",
+  accent: EDU_COLORS?.accent ?? "#F59E0B",
+  surfaceSolid: EDU_COLORS?.surfaceSolid ?? "#FFFFFF",
+  border: Surfaces?.border ?? "#E5E7EB",
+  elevated: Surfaces?.elevated ?? "#FFFFFF",
+};
 
 const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
@@ -59,10 +88,10 @@ function useToast() {
   const insets = useSafeAreaInsets();
   const topOffset = insets.top + NAVBAR_HEIGHT + 8;
 
-  return React.useCallback(
+  return useCallback(
     (type, text1, text2) => {
       Toast.show({
-        type, // "success" | "error" | "info"
+        type,
         text1,
         text2,
         position: "top",
@@ -74,28 +103,31 @@ function useToast() {
   );
 }
 
+/* ---------- Animated loading strip (with proper cleanup) ---------- */
 const LoadingStrip = ({
   title = "Loading Resources",
   subtitle = "Fetching shared files and personalizing by your grade…",
 }) => {
-  const anim = React.useRef(new Animated.Value(0)).current;
-  const [trackW, setTrackW] = React.useState(0);
+  const anim = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef(null);
+  const [trackW, setTrackW] = useState(0);
 
   useEffect(() => {
-    const loop = Animated.loop(
+    loopRef.current = Animated.loop(
       Animated.timing(anim, {
         toValue: 1,
         duration: 1200,
         useNativeDriver: true,
       })
     );
-    loop.start();
+    loopRef.current.start();
     return () => {
+      // Stop the loop & reset
+      if (loopRef.current) loopRef.current.stop();
       anim.stopAnimation(() => anim.setValue(0));
     };
   }, [anim]);
 
-  // Slide a fixed-width bar across the measured track width
   const translateX =
     trackW > 0
       ? anim.interpolate({
@@ -107,6 +139,12 @@ const LoadingStrip = ({
   return (
     <View style={styles.loadingCenterWrap}>
       <View style={styles.loadingCard}>
+        <Ionicons
+          name="sparkles-outline"
+          size={22}
+          color={C.primary}
+          style={{ opacity: 0.9 }}
+        />
         <Text style={styles.loadingTitle}>{title}</Text>
         <Text style={styles.loadingSubtitle}>{subtitle}</Text>
 
@@ -123,8 +161,12 @@ const LoadingStrip = ({
   );
 };
 
+/* =========================================================
+   Resources Screen
+   ========================================================= */
 export default function ResourcesScreen() {
   const showToast = useToast();
+
   const [resources, setResources] = useState([]);
   const [userGrade, setUserGrade] = useState(null);
   const [userRole, setUserRole] = useState(null);
@@ -161,9 +203,11 @@ export default function ResourcesScreen() {
   ];
   const grades = ["6", "7", "8", "9", "10", "11"];
 
+  /* ---------- data ---------- */
   useEffect(() => {
     fetchUser();
   }, []);
+
   useEffect(() => {
     if (userRole || userGrade) {
       fetchResources();
@@ -181,7 +225,9 @@ export default function ResourcesScreen() {
         setUserRole(data.role);
         setUserGrade(data.grade);
       }
-    } catch (e) {}
+    } catch (e) {
+      // silent fail on user fetch
+    }
   };
 
   const fetchDownloads = async () => {
@@ -212,11 +258,15 @@ export default function ResourcesScreen() {
               downloadedAt: item.downloadedAt,
             });
           }
-        } catch (err) {}
+        } catch {
+          /* noop */
+        }
       }
       out.sort((a, b) => (b.downloadedAt || 0) - (a.downloadedAt || 0));
       setDownloadedFiles(out);
-    } catch (e) {}
+    } catch {
+      /* noop */
+    }
   };
 
   const fetchResources = async () => {
@@ -230,7 +280,7 @@ export default function ResourcesScreen() {
         createdAt: d.data().createdAt?.toDate?.(),
       }));
 
-      // Filter by role/grade (unchanged logic)
+      // (Same logic) filter by role/grade
       if (userRole === "tutor" && userGrade) {
         const allowed = Array.from(
           { length: parseInt(userGrade, 10) - 5 },
@@ -241,15 +291,16 @@ export default function ResourcesScreen() {
         data = data.filter((r) => r.grade === userGrade);
       }
 
-      // Sort newest first
       data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setResources(data);
-    } catch (e) {
+    } catch {
+      /* noop */
     } finally {
       setLoading(false);
     }
   };
 
+  /* ---------- actions ---------- */
   const pickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -260,12 +311,12 @@ export default function ResourcesScreen() {
         const f = result.assets[0];
         setSelectedFile({
           name: f.name,
-          type: f.mimeType?.includes("pdf") ? "pdf" : "image",
+          type: f.mimeType?.includes?.("pdf") ? "pdf" : "image",
           uri: f.uri,
           size: f.size,
         });
       }
-    } catch (e) {
+    } catch {
       showToast("error", "Error", "Failed to pick file");
     }
   };
@@ -322,23 +373,12 @@ export default function ResourcesScreen() {
       });
       setSelectedFile(null);
       fetchResources();
-    } catch (e) {
+    } catch {
       showToast("error", "Error", "Failed to share resource");
     } finally {
       setUploading(false);
     }
   };
-
-  const filtered = resources.filter((r) => {
-    const s = searchQuery.toLowerCase();
-    const matchesSearch =
-      r.title.toLowerCase().includes(s) || r.subject.toLowerCase().includes(s);
-    const matchesSubject =
-      selectedSubjectFilter === "All" || r.subject === selectedSubjectFilter;
-    const matchesGrade =
-      selectedGradeFilter === "All" || r.grade === selectedGradeFilter;
-    return matchesSearch && matchesSubject && matchesGrade;
-  });
 
   const viewResource = async (resource) => {
     if (resource.fileType === "image" && resource.fileUri) {
@@ -365,15 +405,15 @@ export default function ResourcesScreen() {
 
   const downloadResource = async (resource) => {
     try {
+      if (!resource?.fileUri) {
+        showToast("error", "Download Failed", "No file available to download");
+        return;
+      }
       const fileUri = FileSystem.documentDirectory + resource.fileName;
       await FileSystem.copyAsync({ from: resource.fileUri, to: fileUri });
 
       setDownloadedFiles((prev) => [
-        {
-          ...resource,
-          fileUri,
-          downloadedAt: new Date(),
-        },
+        { ...resource, fileUri, downloadedAt: new Date() },
         ...prev,
       ]);
 
@@ -389,17 +429,42 @@ export default function ResourcesScreen() {
         "Downloaded",
         `${resource.fileName} saved successfully!`
       );
-    } catch (e) {
+    } catch {
       showToast("error", "Download Failed", "Could not download the file");
     }
   };
 
+  /* ---------- computed ---------- */
+  const filtered = useMemo(() => {
+    const s = searchQuery.trim().toLowerCase();
+    return resources.filter((r) => {
+      const matchesSearch =
+        r.title?.toLowerCase?.().includes(s) ||
+        r.subject?.toLowerCase?.().includes(s);
+      const matchesSubject =
+        selectedSubjectFilter === "All" || r.subject === selectedSubjectFilter;
+      const matchesGrade =
+        selectedGradeFilter === "All" || r.grade === selectedGradeFilter;
+      return matchesSearch && matchesSubject && matchesGrade;
+    });
+  }, [resources, searchQuery, selectedSubjectFilter, selectedGradeFilter]);
+
+  /* ---------- animations ---------- */
+  const fabScale = useRef(new Animated.Value(0.9)).current;
+  useEffect(() => {
+    Animated.spring(fabScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+    }).start();
+  }, [fabScale]);
+
   /* ---------- UI ---------- */
   return (
     <View style={styles.screen}>
-      {/* HEADER, SEARCH & FILTERS (Sticky Top Section) */}
+      {/* HEADER, SEARCH & FILTERS */}
       <View style={styles.headerContainer}>
-        {/* Header Top Row */}
+        {/* Top Row */}
         <BlurCard style={styles.headerTopRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Resources</Text>
@@ -407,19 +472,21 @@ export default function ResourcesScreen() {
               {userRole === "teacher"
                 ? "All Grades"
                 : userRole === "tutor"
-                ? `Grade ${userGrade} & Below`
+                ? userGrade
+                  ? `Grade ${userGrade} & Below`
+                  : "All Grades"
                 : userGrade
                 ? `Grade ${userGrade}`
                 : "All Grades"}
             </Text>
           </View>
 
-          {/* Action Buttons */}
           <View style={styles.headerActions}>
             <Pressable
               style={[styles.pillBtn, styles.successBtn]}
               onPress={() => setShowDownloadsModal(true)}
               hitSlop={8}
+              android_ripple={{ color: "#ffffff22", borderless: false }}
             >
               <Ionicons name="folder-open" size={18} color="#fff" />
               <Text style={styles.pillBtnText}>{downloadedFiles.length}</Text>
@@ -429,6 +496,7 @@ export default function ResourcesScreen() {
               style={[styles.pillBtn, styles.primaryBtn]}
               onPress={() => setShowUploadModal(true)}
               hitSlop={8}
+              android_ripple={{ color: "#ffffff22", borderless: false }}
             >
               <Ionicons name="share-outline" size={16} color="#fff" />
               <Text style={styles.pillBtnText}>Share</Text>
@@ -441,15 +509,17 @@ export default function ResourcesScreen() {
           <Ionicons
             name="search"
             size={18}
-            color={EDU_COLORS.gray500}
+            color={C.gray500}
             style={{ marginRight: 8 }}
           />
           <TextInput
             style={styles.searchInput}
             placeholder="Search resources..."
-            placeholderTextColor={EDU_COLORS.gray400}
+            placeholderTextColor={C.gray400}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            accessibilityLabel="Search resources"
+            returnKeyType="search"
           />
         </View>
 
@@ -461,7 +531,7 @@ export default function ResourcesScreen() {
             contentContainerStyle={styles.chipsRow}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.filterLabel}></Text>
+            <Text style={styles.filterLabel}>Subject:</Text>
             {["All", ...subjects].map((s) => {
               const active = selectedSubjectFilter === s;
               return (
@@ -470,6 +540,7 @@ export default function ResourcesScreen() {
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => setSelectedSubjectFilter(s)}
                   hitSlop={8}
+                  android_ripple={{ color: "#0000000d", borderless: false }}
                 >
                   <Text
                     style={[styles.chipText, active && styles.chipTextActive]}
@@ -482,7 +553,7 @@ export default function ResourcesScreen() {
           </ScrollView>
         </View>
 
-        {/* Grade Filters (Conditional) */}
+        {/* Grade Filters */}
         {(userRole === "teacher" || userRole === "tutor") && (
           <View style={styles.filterChipsContainer}>
             <ScrollView
@@ -509,6 +580,7 @@ export default function ResourcesScreen() {
                       style={[styles.chip, active && styles.chipActive]}
                       onPress={() => setSelectedGradeFilter(g)}
                       hitSlop={8}
+                      android_ripple={{ color: "#0000000d", borderless: false }}
                     >
                       <Text
                         style={[
@@ -540,111 +612,37 @@ export default function ResourcesScreen() {
           </SafeAreaView>
         ) : filtered.length ? (
           filtered.map((r) => (
-            <View key={r.id} style={styles.resourceCard}>
-              <View style={styles.resourceHeader}>
-                {/* File Icon */}
-                <View
-                  style={[
-                    styles.fileIcon,
-                    r.fileType === "pdf" && styles.fileIconPdf,
-                    r.fileType === "image" && styles.fileIconImg,
-                  ]}
-                >
-                  {r.fileType === "pdf" ? (
-                    <MaterialCommunityIcons
-                      name="file-pdf-box"
-                      size={24}
-                      color="#EF4444" // Assuming this is a specific red color
-                    />
-                  ) : r.fileType === "image" ? (
-                    <MaterialCommunityIcons
-                      name="image"
-                      size={24}
-                      color={EDU_COLORS.success}
-                    />
-                  ) : (
-                    <MaterialCommunityIcons
-                      name="file"
-                      size={24}
-                      color={EDU_COLORS.gray500}
-                    />
-                  )}
-                </View>
-
-                {/* Title & Description */}
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={styles.fileName} numberOfLines={1}>
-                    {r.fileName}
-                  </Text>
-                  <Text style={styles.resourceTitle}>{r.title}</Text>
-                  {!!r.description && (
-                    <Text style={styles.resourceDescription} numberOfLines={2}>
-                      {r.description}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Tags */}
-                <View style={styles.tagsCol}>
-                  <View style={styles.subjectTag}>
-                    <Text style={styles.subjectText}>{r.subject}</Text>
-                  </View>
-                  {(userRole === "teacher" || userRole === "tutor") && (
-                    <View style={styles.gradeTag}>
-                      <Text style={styles.gradeText}>Grade {r.grade}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-
-              {/* Card Footer (Meta & Actions) */}
-              <View style={styles.cardFooter}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.metaText}>By {r.uploadedByName}</Text>
-                  <Text style={styles.dateText}>
-                    {r.createdAt?.toLocaleDateString() || "Recent"}
-                  </Text>
-                </View>
-                <View style={styles.actionsRow}>
-                  <Pressable
-                    style={[styles.smallBtn, styles.primaryBtn]}
-                    onPress={() => viewResource(r)}
-                    hitSlop={6}
-                  >
-                    <Ionicons name="eye-outline" size={16} color="#fff" />
-                    <Text style={styles.smallBtnText}>View</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.smallBtn, styles.successBtn]}
-                    onPress={() => downloadResource(r)}
-                    hitSlop={6}
-                  >
-                    <Ionicons name="download-outline" size={16} color="#fff" />
-                    <Text style={styles.smallBtnText}>Download</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
+            <ResourceTile
+              key={r.id}
+              r={r}
+              userRole={userRole}
+              onView={viewResource}
+              onDownload={downloadResource}
+            />
           ))
         ) : (
           <View style={styles.emptyBox}>
-            <MaterialIcons
-              name="find-in-page"
-              size={50}
-              color={EDU_COLORS.gray300}
-            />
+            <MaterialIcons name="find-in-page" size={50} color={C.gray300} />
             <Text style={styles.emptyTitle}>No resources found</Text>
             <Text style={styles.emptySub}>
-              Be the first to share a resource for Grade {userGrade}!
+              Be the first to share a resource
+              {userGrade ? ` for Grade ${userGrade}` : ""}!
             </Text>
           </View>
         )}
       </ScrollView>
 
       {/* FAB */}
-      <Pressable style={styles.fab} onPress={() => setShowUploadModal(true)}>
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+      <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+        <Pressable
+          style={styles.fab}
+          onPress={() => setShowUploadModal(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Share a resource"
+        >
+          <Ionicons name="add" size={28} color="#fff" />
+        </Pressable>
+      </Animated.View>
 
       {/* Upload Modal */}
       <Modal
@@ -662,8 +660,9 @@ export default function ResourcesScreen() {
               <Pressable
                 style={styles.modalClose}
                 onPress={() => setShowUploadModal(false)}
+                hitSlop={8}
               >
-                <Ionicons name="close" size={22} color={EDU_COLORS.gray500} />
+                <Ionicons name="close" size={22} color={C.gray500} />
               </Pressable>
             </View>
 
@@ -672,22 +671,22 @@ export default function ResourcesScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Title Input */}
+              {/* Title */}
               <Text style={styles.inputLabel}>Resource Title</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter a descriptive title"
-                placeholderTextColor={EDU_COLORS.gray400}
+                placeholderTextColor={C.gray400}
                 value={uploadData.title}
                 onChangeText={(v) => setUploadData((p) => ({ ...p, title: v }))}
               />
 
-              {/* Description Input */}
+              {/* Description */}
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="Describe what this resource contains"
-                placeholderTextColor={EDU_COLORS.gray400}
+                placeholderTextColor={C.gray400}
                 multiline
                 numberOfLines={4}
                 value={uploadData.description}
@@ -696,7 +695,7 @@ export default function ResourcesScreen() {
                 }
               />
 
-              {/* Subject Selection */}
+              {/* Subject */}
               <Text style={styles.inputLabel}>Subject</Text>
               <ScrollView
                 horizontal
@@ -714,6 +713,7 @@ export default function ResourcesScreen() {
                         setUploadData((p) => ({ ...p, subject: s }))
                       }
                       hitSlop={8}
+                      android_ripple={{ color: "#0000000d", borderless: false }}
                     >
                       <Text
                         style={[
@@ -728,7 +728,7 @@ export default function ResourcesScreen() {
                 })}
               </ScrollView>
 
-              {/* Grade Selection (Conditional) */}
+              {/* Grade (teacher/tutor) */}
               {(userRole === "teacher" || userRole === "tutor") && (
                 <>
                   <Text style={styles.inputLabel}>Grade</Text>
@@ -748,6 +748,10 @@ export default function ResourcesScreen() {
                             setUploadData((p) => ({ ...p, grade: g }))
                           }
                           hitSlop={8}
+                          android_ripple={{
+                            color: "#0000000d",
+                            borderless: false,
+                          }}
                         >
                           <Text
                             style={[
@@ -764,7 +768,7 @@ export default function ResourcesScreen() {
                 </>
               )}
 
-              {/* Student Info Banner (Conditional) */}
+              {/* Student banner */}
               {userRole === "student" && (
                 <View style={styles.infoBanner}>
                   <Text style={styles.infoTitle}>Grade: {userGrade}</Text>
@@ -774,28 +778,33 @@ export default function ResourcesScreen() {
                 </View>
               )}
 
-              {/* File Attachment */}
+              {/* File */}
               <Text style={styles.inputLabel}>File Attachment</Text>
-              <Pressable style={styles.filePicker} onPress={pickFile}>
+              <Pressable
+                style={styles.filePicker}
+                onPress={pickFile}
+                hitSlop={8}
+                android_ripple={{ color: "#0000000d", borderless: false }}
+              >
                 {selectedFile ? (
                   <View style={styles.fileRow}>
                     <MaterialCommunityIcons
                       name={selectedFile.type === "pdf" ? "file-pdf" : "image"}
                       size={22}
-                      color={PALETTE_60_30_10.accent10}
+                      color={PALETTE_60_30_10?.accent10 ?? C.accent}
                     />
                     <View style={{ flex: 1, marginHorizontal: 10 }}>
                       <Text style={styles.fileNamePick} numberOfLines={1}>
                         {selectedFile.name}
                       </Text>
                       <Text style={styles.fileSize}>
-                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        {((selectedFile.size ?? 0) / 1024 / 1024).toFixed(2)} MB
                       </Text>
                     </View>
                     <Ionicons
                       name="checkmark-circle"
                       size={20}
-                      color={EDU_COLORS.success}
+                      color={C.success}
                     />
                   </View>
                 ) : (
@@ -803,7 +812,7 @@ export default function ResourcesScreen() {
                     <Ionicons
                       name="cloud-upload-outline"
                       size={28}
-                      color={PALETTE_60_30_10.accent10}
+                      color={PALETTE_60_30_10?.accent10 ?? C.accent}
                     />
                     <Text style={styles.pickText}>
                       Select PDF or Image file
@@ -813,11 +822,12 @@ export default function ResourcesScreen() {
                 )}
               </Pressable>
 
-              {/* Submit Button */}
+              {/* Submit */}
               <Pressable
                 style={[styles.submitLarge, uploading && styles.submitDisabled]}
                 onPress={uploadResource}
                 disabled={uploading}
+                android_ripple={{ color: "#ffffff22", borderless: false }}
               >
                 <Ionicons name="cloud-upload" size={20} color="#fff" />
                 <Text style={styles.submitLargeText}>
@@ -845,8 +855,9 @@ export default function ResourcesScreen() {
               <Pressable
                 style={styles.modalClose}
                 onPress={() => setShowDownloadsModal(false)}
+                hitSlop={8}
               >
-                <Ionicons name="close" size={22} color={EDU_COLORS.gray500} />
+                <Ionicons name="close" size={22} color={C.gray500} />
               </Pressable>
             </View>
 
@@ -861,9 +872,7 @@ export default function ResourcesScreen() {
                       <MaterialCommunityIcons
                         name={f.fileType === "pdf" ? "file-pdf-box" : "image"}
                         size={22}
-                        color={
-                          f.fileType === "pdf" ? "#EF4444" : EDU_COLORS.success
-                        }
+                        color={f.fileType === "pdf" ? "#EF4444" : C.success}
                       />
                       <View style={{ flex: 1, marginLeft: 10 }}>
                         <Text style={styles.downloadName} numberOfLines={1}>
@@ -881,8 +890,9 @@ export default function ResourcesScreen() {
                     <Pressable
                       style={[styles.smallBtn, styles.primaryBtn]}
                       onPress={async () => {
-                        // ... existing view/share logic ...
+                        // keep your view logic the same
                       }}
+                      android_ripple={{ color: "#ffffff22", borderless: false }}
                     >
                       <Text style={styles.smallBtnText}>
                         {f.fileType === "image"
@@ -899,7 +909,7 @@ export default function ResourcesScreen() {
                   <Ionicons
                     name="folder-open-outline"
                     size={46}
-                    color={EDU_COLORS.gray300}
+                    color={C.gray300}
                   />
                   <Text style={styles.emptyDownloadsText}>
                     No downloads yet
@@ -924,9 +934,7 @@ export default function ResourcesScreen() {
           <View style={styles.imageTop}>
             <Pressable
               style={styles.imageIconBtn}
-              onPress={async () => {
-                // ... existing share logic ...
-              }}
+              onPress={async () => {}}
               hitSlop={8}
             >
               <Ionicons name="share-outline" size={22} color="#fff" />
@@ -966,36 +974,147 @@ export default function ResourcesScreen() {
   );
 }
 
-/* ================= styles ================= */
-// Conceptual styles for the requested component
-// Assumes EDU_COLORS and PALETTE_60_30_10 are imported from colors.js
+/* ---------- Compact resource tile (replaces “plain white” block) ---------- */
+function ResourceTile({ r, userRole, onView, onDownload }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const onPressIn = () =>
+    Animated.spring(scale, {
+      toValue: 0.98,
+      useNativeDriver: true,
+      friction: 7,
+    }).start();
+  const onPressOut = () =>
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 7,
+    }).start();
 
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <View style={styles.resourceCard}>
+        <View style={styles.resourceHeader}>
+          <View
+            style={[
+              styles.fileIcon,
+              r.fileType === "pdf" && styles.fileIconPdf,
+              r.fileType === "image" && styles.fileIconImg,
+            ]}
+          >
+            {r.fileType === "pdf" ? (
+              <MaterialCommunityIcons
+                name="file-pdf-box"
+                size={22}
+                color="#EF4444"
+              />
+            ) : r.fileType === "image" ? (
+              <MaterialCommunityIcons
+                name="image"
+                size={22}
+                color={C.success}
+              />
+            ) : (
+              <MaterialCommunityIcons name="file" size={22} color={C.gray500} />
+            )}
+          </View>
+
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={styles.fileName} numberOfLines={1}>
+              {r.fileName}
+            </Text>
+            <Text style={styles.resourceTitle}>{r.title}</Text>
+            {!!r.description && (
+              <Text style={styles.resourceDescription} numberOfLines={2}>
+                {r.description}
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.tagsCol}>
+            <View style={styles.subjectTag}>
+              <Ionicons
+                name="book-outline"
+                size={12}
+                color={C.primary}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.subjectText}>{r.subject}</Text>
+            </View>
+            {(userRole === "teacher" || userRole === "tutor") && (
+              <View style={styles.gradeTag}>
+                <Ionicons
+                  name="school-outline"
+                  size={12}
+                  color="#fff"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.gradeText}>Grade {r.grade}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.metaText}>By {r.uploadedByName}</Text>
+            <Text style={styles.dateText}>
+              {r.createdAt?.toLocaleDateString?.() || "Recent"}
+            </Text>
+          </View>
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={[styles.smallBtn, styles.primaryBtn]}
+              onPressIn={onPressIn}
+              onPressOut={onPressOut}
+              onPress={() => onView(r)}
+              hitSlop={6}
+              android_ripple={{ color: "#ffffff22", borderless: false }}
+            >
+              <Ionicons name="eye-outline" size={16} color="#fff" />
+              <Text style={styles.smallBtnText}>View</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.smallBtn, styles.successBtn]}
+              onPressIn={onPressIn}
+              onPressOut={onPressOut}
+              onPress={() => onDownload(r)}
+              hitSlop={6}
+              android_ripple={{ color: "#ffffff22", borderless: false }}
+            >
+              <Ionicons name="download-outline" size={16} color="#fff" />
+              <Text style={styles.smallBtnText}>Download</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+/* ================= styles ================= */
 const styles = StyleSheet.create({
   // Global Layout
   screen: {
     flex: 1,
     paddingTop: PAGE_TOP_OFFSET,
-    // Note: Global background color is #F8FAFC and should be handled by a higher-level component
   },
 
   blurCard: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Surfaces.border,
+    borderColor: C.border,
     overflow: "hidden",
     backgroundColor: "transparent",
     paddingHorizontal: 16,
     padding: 12,
   },
 
-  // Top Header & Search Area
+  // Top Header & Search
   headerContainer: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 30 : 50, // Safe Area/Status Bar adjustment
+    paddingTop: Platform.OS === "android" ? 10 : 20,
     paddingBottom: 16,
-    // Use a clean background for the sticky header area
-
-    zIndex: 10, // Ensure header is above scrollable content
+    zIndex: 10,
   },
   headerTopRow: {
     flexDirection: "row",
@@ -1004,14 +1123,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    fontSize: 28, // Professional large title
+    fontSize: 28,
     fontWeight: "700",
-    color: EDU_COLORS.gray900, // Dark text for readability
+    color: C.gray900,
   },
   subtitle: {
     fontSize: 14,
     fontWeight: "500",
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 2,
   },
   headerActions: {
@@ -1019,7 +1138,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  // Pills (Buttons)
+  // Pills
   pillBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1028,10 +1147,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   successBtn: {
-    backgroundColor: EDU_COLORS.success, // e.g., a shade of green
+    backgroundColor: C.success,
   },
   primaryBtn: {
-    backgroundColor: EDU_COLORS.primary, // e.g., a shade of blue
+    backgroundColor: C.primary,
   },
   pillBtnText: {
     color: "#fff",
@@ -1044,7 +1163,9 @@ const styles = StyleSheet.create({
   searchCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF", // Light background for the search field
+    backgroundColor: C.surfaceSolid,
+    borderWidth: 1,
+    borderColor: C.border,
     borderRadius: 10,
     padding: 10,
     marginTop: 8,
@@ -1053,73 +1174,71 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: EDU_COLORS.gray900, // was "#FFFFFF"
+    color: C.gray900,
     paddingVertical: 0,
+    paddingHorizontal: 8,
   },
 
   // Filters
   filterChipsContainer: {
     paddingVertical: 8,
-    paddingHorizontal: 0,
   },
   chipsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 0,
+    paddingHorizontal: 2,
+    gap: 8,
   },
   filterLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginRight: 10,
-  },
-  chipsRow: {
-    paddingHorizontal: 2,
-    gap: 8,
+    fontWeight: "700",
+    color: C.gray700,
+    marginRight: 6,
   },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: Surfaces.elevated,
+    borderRadius: 999,
+    backgroundColor: C.elevated,
     borderWidth: 1,
-    borderColor: Surfaces.border,
+    borderColor: C.border,
   },
   chipActive: {
-    backgroundColor: EDU_COLORS.primary,
+    backgroundColor: C.primary,
+    borderColor: C.primary,
   },
   chipText: {
     fontSize: 14,
-    color: EDU_COLORS.gray700,
-    fontWeight: "500",
+    color: C.gray700,
+    fontWeight: "600",
   },
   chipTextActive: {
     color: "#fff",
   },
 
-  // Main Content
+  // Content
   content: {
     flex: 1,
     paddingHorizontal: 22,
   },
   contentContainer: {
     paddingVertical: 16,
-    paddingBottom: 100, // Space for the FAB
+    paddingBottom: 100,
   },
 
-  // Resource Card
+  /* ---------- Compact Card Tile (replaces plain white) ---------- */
   resourceCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
     borderWidth: 1,
-    borderColor: EDU_COLORS.gray100,
+    borderColor: C.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   resourceHeader: {
     flexDirection: "row",
@@ -1127,34 +1246,34 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   fileIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
-    backgroundColor: EDU_COLORS.gray200, // Default icon background
+    backgroundColor: C.gray200,
   },
   fileIconPdf: {
-    backgroundColor: "#FEE2E2", // Light red/pink for PDF
+    backgroundColor: "#FEE2E2",
   },
   fileIconImg: {
-    backgroundColor: "#D1FAE5", // Light green for Image
+    backgroundColor: "#D1FAE5",
   },
   fileName: {
     fontSize: 12,
-    color: EDU_COLORS.gray500,
-    fontWeight: "500",
+    color: C.gray500,
+    fontWeight: "600",
   },
   resourceTitle: {
     fontSize: 16,
-    fontWeight: "600",
-    color: EDU_COLORS.gray900,
+    fontWeight: "800",
+    color: C.gray900,
     marginTop: 2,
   },
   resourceDescription: {
     fontSize: 14,
-    color: EDU_COLORS.gray600,
+    color: C.gray600,
     marginTop: 4,
   },
   tagsCol: {
@@ -1162,18 +1281,22 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   subjectTag: {
-    backgroundColor: EDU_COLORS.primary + "1A", // A softer accent color
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.primary + "1A",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   subjectText: {
     fontSize: 12,
-    fontWeight: "600",
-    color: EDU_COLORS.primary,
+    fontWeight: "700",
+    color: C.primary,
   },
   gradeTag: {
-    backgroundColor: EDU_COLORS.accent, // Another accent color
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.accent,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -1181,26 +1304,27 @@ const styles = StyleSheet.create({
   },
   gradeText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "800",
     color: "#fff",
   },
+
   cardFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: EDU_COLORS.gray100,
+    borderTopColor: C.gray100,
     marginTop: 10,
   },
   metaText: {
     fontSize: 12,
-    color: EDU_COLORS.gray700,
-    fontWeight: "500",
+    color: C.gray700,
+    fontWeight: "600",
   },
   dateText: {
     fontSize: 12,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 2,
   },
   actionsRow: {
@@ -1211,28 +1335,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
   smallBtnText: {
     color: "#fff",
-    fontWeight: "600",
+    fontWeight: "800",
     fontSize: 13,
     marginLeft: 4,
+    letterSpacing: 0.2,
   },
 
-  // Loading & Empty States
+  // Loading & Empty
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingTop: 50,
-  },
-  loadingText: {
-    fontSize: 18,
-    color: EDU_COLORS.gray700,
-    fontWeight: "600",
-    marginTop: 10,
   },
   emptyBox: {
     alignItems: "center",
@@ -1240,13 +1359,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.gray700,
+    fontWeight: "800",
+    color: C.gray700,
     marginTop: 10,
   },
   emptySub: {
     fontSize: 14,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     textAlign: "center",
     marginTop: 4,
   },
@@ -1259,7 +1378,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: EDU_COLORS.primary,
+    backgroundColor: C.primary,
     justifyContent: "center",
     alignItems: "center",
     ...Platform.select({
@@ -1275,7 +1394,7 @@ const styles = StyleSheet.create({
     }),
   },
 
-  // Modals (Upload/Downloads)
+  // Modals
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.4)",
@@ -1286,7 +1405,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
-    height: "90%", // Modal takes up most of the screen
+    height: "90%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -1294,12 +1413,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 20,
     borderBottomWidth: 1,
-    borderBottomColor: EDU_COLORS.gray100,
+    borderBottomColor: C.gray100,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: "700",
-    color: EDU_COLORS.gray900,
+    fontWeight: "800",
+    color: C.gray900,
   },
   modalClose: {
     padding: 4,
@@ -1308,52 +1427,58 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 20,
   },
+
   inputLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: EDU_COLORS.gray700,
+    fontWeight: "800",
+    color: C.gray700,
     marginBottom: 6,
     marginTop: 15,
   },
   input: {
     borderWidth: 1,
-    borderColor: EDU_COLORS.gray300,
-    borderRadius: 8,
+    borderColor: C.gray300,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: EDU_COLORS.gray900,
+    color: C.gray900,
+    backgroundColor: "#fff",
   },
   textArea: {
     minHeight: 100,
     paddingTop: 10,
     textAlignVertical: "top",
   },
+
   infoBanner: {
-    backgroundColor: EDU_COLORS.infoLight, // Light blue or similar for info
+    backgroundColor: C.infoLight,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     marginTop: 15,
+    borderWidth: 1,
+    borderColor: C.gray200,
   },
   infoTitle: {
     fontSize: 14,
-    fontWeight: "700",
-    color: EDU_COLORS.infoDark,
+    fontWeight: "800",
+    color: C.infoDark,
   },
   infoText: {
     fontSize: 13,
-    color: EDU_COLORS.infoDark,
+    color: C.infoDark,
     marginTop: 4,
   },
+
   filePicker: {
     borderWidth: 2,
-    borderColor: EDU_COLORS.primaryLight, // Light primary color for border
+    borderColor: C.primaryLight,
     borderStyle: "dashed",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: EDU_COLORS.primaryExtraLight, // Very light primary color background
+    backgroundColor: C.primaryXL,
   },
   fileRow: {
     flexDirection: "row",
@@ -1362,32 +1487,33 @@ const styles = StyleSheet.create({
   },
   fileNamePick: {
     fontSize: 15,
-    fontWeight: "600",
-    color: EDU_COLORS.gray900,
+    fontWeight: "700",
+    color: C.gray900,
   },
   fileSize: {
     fontSize: 13,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 2,
   },
   pickText: {
     fontSize: 15,
-    fontWeight: "600",
-    color: PALETTE_60_30_10.accent10, // Assuming a strong accent color
+    fontWeight: "800",
+    color: PALETTE_60_30_10?.accent10 ?? C.accent,
     marginTop: 8,
   },
   pickSub: {
     fontSize: 13,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 4,
   },
+
   submitLarge: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: EDU_COLORS.primary,
+    backgroundColor: C.primary,
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 25,
     marginBottom: 20,
   },
@@ -1397,18 +1523,21 @@ const styles = StyleSheet.create({
   submitLargeText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "900",
     marginLeft: 8,
+    letterSpacing: 0.3,
   },
 
   // Downloads Modal
   downloadCard: {
-    backgroundColor: EDU_COLORS.gray50, // Very light card background
-    borderRadius: 10,
+    backgroundColor: C.gray50,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 10,
     borderLeftWidth: 4,
-    borderLeftColor: EDU_COLORS.primaryLight,
+    borderLeftColor: C.primaryLight,
+    borderWidth: 1,
+    borderColor: C.gray100,
   },
   downloadHead: {
     flexDirection: "row",
@@ -1417,17 +1546,17 @@ const styles = StyleSheet.create({
   },
   downloadName: {
     fontSize: 14,
-    fontWeight: "600",
-    color: EDU_COLORS.gray900,
+    fontWeight: "800",
+    color: C.gray900,
   },
   downloadTitle: {
     fontSize: 12,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 2,
   },
   downloadDate: {
     fontSize: 12,
-    color: EDU_COLORS.gray600,
+    color: C.gray600,
     marginBottom: 8,
   },
   emptyDownloads: {
@@ -1436,14 +1565,14 @@ const styles = StyleSheet.create({
   },
   emptyDownloadsText: {
     fontSize: 16,
-    color: EDU_COLORS.gray500,
+    color: C.gray500,
     marginTop: 10,
   },
 
   // Image Modal
   imageOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.9)", // Darker background for image viewer
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
     paddingTop: Platform.OS === "android" ? 30 : 50,
     paddingHorizontal: 10,
     justifyContent: "space-between",
@@ -1475,21 +1604,23 @@ const styles = StyleSheet.create({
   },
   imageTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "900",
     color: "#fff",
     textAlign: "center",
   },
   imageDesc: {
     fontSize: 14,
-    color: EDU_COLORS.gray300,
+    color: C.gray300,
     textAlign: "center",
     marginTop: 5,
   },
   imageMeta: {
     fontSize: 12,
-    color: EDU_COLORS.gray400,
+    color: C.gray400,
     marginTop: 8,
   },
+
+  // Loading card
   loadingCenterWrap: {
     width: "100%",
     paddingHorizontal: 16,
@@ -1502,9 +1633,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 24,
     paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid ?? "#FFFFFF",
+    backgroundColor: C.surfaceSolid,
     borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#E5E7EB",
+    borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
@@ -1512,14 +1643,14 @@ const styles = StyleSheet.create({
   loadingTitle: {
     marginTop: 4,
     fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.gray900,
+    fontWeight: "900",
+    color: C.gray900,
     textAlign: "center",
   },
   loadingSubtitle: {
     fontSize: 13.5,
     lineHeight: 18,
-    color: EDU_COLORS.gray600,
+    color: C.gray600,
     textAlign: "center",
     marginBottom: 8,
   },
@@ -1527,7 +1658,7 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 8,
     borderRadius: 8,
-    backgroundColor: EDU_COLORS.gray200,
+    backgroundColor: C.gray200,
     overflow: "hidden",
     marginTop: 6,
   },
@@ -1535,6 +1666,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 8,
     borderRadius: 8,
-    backgroundColor: EDU_COLORS.primary,
+    backgroundColor: C.primary,
   },
 });

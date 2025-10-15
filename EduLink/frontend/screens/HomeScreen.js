@@ -1,5 +1,5 @@
 // frontend/screens/HomeScreen.js
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, memo, useRef } from "react";
 import {
   View,
   Text,
@@ -11,20 +11,23 @@ import {
   Platform,
   Dimensions,
   Animated,
-  // Added StatusBar for a clean look
   StatusBar,
 } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
+import { BlurView } from "expo-blur";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+
 import {
-  // Using the provided color constants
   EDU_COLORS,
   Surfaces,
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
+
 import { signOut } from "firebase/auth";
 import { auth, db } from "../services/firebaseAuth";
 import {
@@ -37,41 +40,97 @@ import {
   orderBy,
   updateDoc,
 } from "firebase/firestore";
-import Toast from "react-native-toast-message";
-import { BlurView } from "expo-blur";
 
-/* ---------------- Constants ---------------- */
+/* ---------------- Constants & safe fallbacks ---------------- */
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-// Renaming to be more specific to UI components
-const CORNER_RADIUS = 16; // Slightly reduced for a cleaner, modern look
-
-const PAGE_TOP_OFFSET = 16; // Reduced top offset as SafeAreaView handles it
+const CORNER_RADIUS = 16;
+const PAGE_TOP_OFFSET = 16;
 const CONTENT_HORIZONTAL_PADDING = 20;
-const CARD_HORIZONTAL_PADDING = 18; // Increased slightly for more breathing room
+const CARD_HORIZONTAL_PADDING = 18;
 const CARD_VERTICAL_PADDING = 18;
 
-// Reusable Blur Card Component for consistent design
-const BlurCard = ({
-  children,
-  style,
-  intensity = 45,
-  tint = "systemMaterialLight",
-}) => (
-  // Increased intensity for better blur effect on a light background
-  <BlurView intensity={intensity} tint={tint} style={[styles.blurCard, style]}>
+// Robust color tokens (avoid undefined theme keys)
+const PRIMARY = EDU_COLORS?.primary ?? "#0A8CA0";
+const PRIMARY_TEXT = EDU_COLORS?.textPrimary ?? "#0B1220";
+const SECONDARY_TEXT = EDU_COLORS?.textSecondary ?? "#475569";
+const ERROR = EDU_COLORS?.error ?? "#EF4444";
+const SURFACE = Surfaces?.solid ?? "#FFFFFF";
+const BORDER = Surfaces?.border ?? "#E5E7EB";
+const BUTTON_BG = Buttons?.primaryBg ?? PRIMARY;
+const BUTTON_TEXT = Buttons?.primaryText ?? "#FFFFFF";
+const ACCENT10 = PALETTE_60_30_10?.accent10 ?? "rgba(245, 158, 11, 0.14)"; // amber-ish
+
+/* ---------------- Reusable UI ---------------- */
+const BlurCard = ({ children, style, intensity = 32, tint }) => (
+  <BlurView
+    intensity={intensity}
+    tint={tint ?? (Platform.OS === "ios" ? "systemMaterialLight" : "light")}
+    style={[styles.blurCard, style]}
+  >
     {children}
   </BlurView>
 );
 
-/* ---------------- Card Component (unused but kept for pattern) ---------------- */
 const Card = memo(({ style, children }) => (
   <View style={[styles.card, style]}>{children}</View>
 ));
 
+// Little tiles like your screenshot (“Performance Insights” look)
+const InsightTile = ({ icon, color, title, subtitle }) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 360,
+      useNativeDriver: true,
+    }).start();
+  }, [anim]);
+  return (
+    <Animated.View
+      style={{
+        transform: [
+          {
+            translateY: anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [10, 0],
+            }),
+          },
+        ],
+        opacity: anim,
+        flex: 1,
+      }}
+    >
+      <View style={styles.insightTile}>
+        <View
+          style={[styles.insightIconWrap, { backgroundColor: color + "22" }]}
+        >
+          {icon}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.insightTitle}>{title}</Text>
+          <Text style={styles.insightSubtitle}>{subtitle}</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+};
+
+// List rows like “Tips for Better Sales”
+const TipItem = ({ icon, title, subtitle }) => (
+  <View style={styles.tipRow}>
+    <View style={styles.tipIconCircle}>{icon}</View>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.tipTitle}>{title}</Text>
+      <Text style={styles.tipSubtitle}>{subtitle}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={18} color={SECONDARY_TEXT} />
+  </View>
+);
+
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
-  /* ---------- State (Logic unchanged) ---------- */
+  /* ---------- State (logic preserved) ---------- */
   const [userGrade, setUserGrade] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userPoints, setUserPoints] = useState(0);
@@ -88,9 +147,9 @@ export default function HomeScreen({ navigation }) {
   const [expandedQuestions, setExpandedQuestions] = useState({});
 
   const [trackW, setTrackW] = useState(0);
-  const barAnim = React.useRef(new Animated.Value(0)).current;
+  const barAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!loading) return;
     const loop = Animated.loop(
       Animated.sequence([
@@ -112,10 +171,9 @@ export default function HomeScreen({ navigation }) {
 
   const barTranslate = barAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-80, Math.max(trackW - 80, 0)], // width-aware
+    outputRange: [-80, Math.max(trackW - 80, 0)],
   });
 
-  /* ---------- Utility Functions (Logic unchanged) ---------- */
   const showToast = (type, text1, text2) =>
     Toast.show({
       type,
@@ -133,20 +191,16 @@ export default function HomeScreen({ navigation }) {
     fetchUserProfile();
     fetchUnreadNotifications();
     fetchEncouragements();
-
     const interval = setInterval(fetchUnreadNotifications, 10000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (userRole && (userGrade || userRole === "teacher")) {
+    if (userRole && (userGrade || userRole === "teacher"))
       fetchGradeQuestions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userGrade, userRole]);
 
-  /* ---------- Data Fetching Functions (unchanged) ---------- */
+  /* ---------- Data Fetching (unchanged logic) ---------- */
   const fetchUserProfile = async () => {
     try {
       const user = auth.currentUser;
@@ -255,7 +309,7 @@ export default function HomeScreen({ navigation }) {
       const count = Math.max(0, snap.size || 0);
       setUnreadNotifications(count);
     } catch {
-      // soft fail; no toast spam
+      /* silent */
     }
   };
 
@@ -274,7 +328,7 @@ export default function HomeScreen({ navigation }) {
       const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setEncouragements(Array.isArray(items) ? items : []);
     } catch {
-      // soft section
+      /* silent */
     }
   };
 
@@ -289,7 +343,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  /* ---------- Classroom Filtering ---------- */
   const getUserClassrooms = () => {
     const all = Array.isArray(classrooms) ? classrooms : [];
     if (userRole === "teacher") return all;
@@ -306,26 +359,24 @@ export default function HomeScreen({ navigation }) {
   };
   const userClassrooms = getUserClassrooms();
 
-  /* ---------- Loading Screen ---------- */
-  /**** replace your current `if (loading) { ... }` return with this ****/
+  /* ---------- Loading ---------- */
   if (loading) {
     return (
       <View style={styles.loadingFullscreenCenter}>
         <View style={styles.loadingCard}>
-          <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-          <Text style={styles.loadingTitle}>Loading Dashboard ...</Text>
+          <ActivityIndicator size="large" color={PRIMARY} />
+          <Text style={styles.loadingTitle}>Loading Dashboard …</Text>
           <Text style={styles.loadingSubtitle}>
             Fetching your classes, questions, and recent activity
           </Text>
 
-          {/* Indeterminate progress bar (width-aware) */}
           <View
             style={styles.progressTrack}
             onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
           >
             <Animated.View
               style={[
-                styles.progressBarIndeterminate, // <-- use the correct style
+                styles.progressBarIndeterminate,
                 { transform: [{ translateX: barTranslate }] },
               ]}
             />
@@ -335,65 +386,24 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  /* ---------- Main Screen (Enhanced Layout and Styling) ---------- */
+  /* ---------- Main ---------- */
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" />
-      {/* Header Section */}
+
+      {/* Header */}
       <BlurCard style={styles.headerCard}>
         <View style={styles.headerContent}>
           <View style={styles.headerTextContainer}>
             <Text style={styles.welcomeText}>
-              Welcome back! {userRole === "teacher" ? "👨‍🏫" : "🧑‍🎓"}
+              Welcome to EduLink ! {userRole === "teacher" ? "👨‍🏫" : "🧑‍🎓"}
             </Text>
-            <Text style={styles.subtitle}>Ready to learn and grow</Text>
-          </View>
-
-          <View style={styles.headerActions}>
-            {/* Notification Button */}
-            <Pressable
-              onPress={() => navigation?.navigate?.("Notifications")}
-              style={styles.notificationButton}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Open notifications"
-            >
-              <Text style={styles.notificationIcon}>🔔</Text>
-              {unreadNotifications > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.badgeText}>
-                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-
-            {/* Profile Avatar */}
-            <Pressable
-              onPress={() => navigation?.navigate?.("Profile")}
-              style={styles.avatarContainer}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Open profile"
-            >
-              {profileImage ? (
-                <Image
-                  source={{ uri: profileImage }}
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarText}>
-                    {auth.currentUser?.email?.[0]?.toUpperCase() || "U"}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
+            <Text style={styles.subtitle}>Are you ready to learn and grow</Text>
           </View>
         </View>
       </BlurCard>
 
-      {/* Main Content ScrollView */}
+      {/* Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -402,28 +412,70 @@ export default function HomeScreen({ navigation }) {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Status Card (User Role/Points) - Moved outside the header but still prominent */}
-        <BlurCard style={styles.statusCard}>
-          <View style={styles.statusContent}>
-            <View style={styles.statusInfo}>
-              <Text style={styles.statusRole}>
-                {userRole?.toUpperCase?.() ?? "USER"}
-              </Text>
-              <Text style={styles.statusGrade}>
-                {userRole === "teacher" ? "All Grades" : `Grade ${userGrade}`}
-              </Text>
-            </View>
-
-            <View style={styles.pointsContainer}>
-              <Text style={styles.pointsValue}>
-                {Number.isFinite(userPoints) ? userPoints : 0}
-              </Text>
-              <Text style={styles.pointsLabel}>Learning Points</Text>
-            </View>
+        {/* === Performance Insights / Tips (screenshot-style tiles) === */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Performance Insights</Text>
+          <View style={styles.insightRow}>
+            <InsightTile
+              color="#16A34A"
+              icon={<Ionicons name="time-outline" size={20} color="#16A34A" />}
+              title="Response Time"
+              subtitle="Fast responder — typically replies within 30 minutes"
+            />
+            <View style={{ width: 12 }} />
+            <InsightTile
+              color="#2563EB"
+              icon={
+                <Ionicons
+                  name="stats-chart-outline"
+                  size={20}
+                  color="#2563EB"
+                />
+              }
+              title="Activity Level"
+              subtitle="Moderate — based on your recent interactions"
+            />
           </View>
-        </BlurCard>
 
-        {/* Encouragements Section */}
+          <View style={{ height: 14 }} />
+
+          <Text style={styles.sectionTitle}>Tips for Better Results</Text>
+          <View style={styles.tipCard}>
+            <TipItem
+              icon={
+                <Ionicons
+                  name="chatbubbles-outline"
+                  size={18}
+                  color={PRIMARY}
+                />
+              }
+              title="Respond quickly"
+              subtitle="Reply to inquiries to increase engagement"
+            />
+            <View style={styles.tipDivider} />
+            <TipItem
+              icon={
+                <MaterialCommunityIcons
+                  name="image-multiple-outline"
+                  size={18}
+                  color={PRIMARY}
+                />
+              }
+              title="Use clear visuals"
+              subtitle="Add high-quality images to attract attention"
+            />
+            <View style={styles.tipDivider} />
+            <TipItem
+              icon={
+                <Ionicons name="pricetag-outline" size={18} color={PRIMARY} />
+              }
+              title="Be specific"
+              subtitle="Provide details and context for faster help"
+            />
+          </View>
+        </View>
+
+        {/* Encouragements */}
         {encouragements.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>💝 Words of Encouragement</Text>
@@ -447,7 +499,7 @@ export default function HomeScreen({ navigation }) {
         )}
         <View style={styles.sectionDivider} />
 
-        {/* My Classrooms Section */}
+        {/* My Classrooms */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>My Classrooms</Text>
@@ -456,7 +508,7 @@ export default function HomeScreen({ navigation }) {
           {classroomsLoading ? (
             <ActivityIndicator
               size="small"
-              color={EDU_COLORS.primary}
+              color={PRIMARY}
               style={styles.loadingIndicator}
             />
           ) : userClassrooms.length === 0 ? (
@@ -493,7 +545,7 @@ export default function HomeScreen({ navigation }) {
                   }}
                   style={({ pressed }) => [
                     styles.classroomCardWrapper,
-                    { opacity: pressed ? 0.8 : 1 },
+                    { opacity: pressed ? 0.85 : 1 },
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${c.title}`}
@@ -506,10 +558,7 @@ export default function HomeScreen({ navigation }) {
                           {c.students} Students • {c.questions} Questions
                         </Text>
                       </View>
-                      {/* Removed the separate 'View' button, made the whole card pressable */}
-                      <Text style={styles.classroomViewCta}>
-                        Explore &rarr;
-                      </Text>
+                      <Text style={styles.classroomViewCta}>Explore →</Text>
                     </View>
                   </BlurCard>
                 </Pressable>
@@ -517,9 +566,10 @@ export default function HomeScreen({ navigation }) {
             </ScrollView>
           )}
         </View>
+
         <View style={styles.sectionDivider} />
 
-        {/* Help Needed Section */}
+        {/* Help Needed */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTextContainer}>
@@ -547,11 +597,9 @@ export default function HomeScreen({ navigation }) {
               <Pressable
                 key={q.id}
                 onPress={() =>
-                  navigation?.navigate?.("QuestionDetail", {
-                    questionId: q.id,
-                  })
+                  navigation?.navigate?.("QuestionDetail", { questionId: q.id })
                 }
-                style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                 accessibilityRole="button"
                 accessibilityLabel="View question details"
               >
@@ -578,9 +626,10 @@ export default function HomeScreen({ navigation }) {
             </BlurCard>
           )}
         </View>
+
         <View style={styles.sectionDivider} />
 
-        {/* Recent Solutions Section */}
+        {/* Recent Solutions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Solutions</Text>
@@ -654,77 +703,51 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-/* ---------- Enhanced Styles ---------- */
+/* ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
-  // Global/Screen Styles
-  screen: {
-    flex: 1,
-    // Background color is handled globally, so no background color here
-  },
-  scrollContent: {
-    paddingBottom: 120, // More padding to ensure FAB doesn't hide content
-  },
+  screen: { flex: 1 },
+  scrollContent: { paddingBottom: 120 },
+
   sectionDivider: {
     height: 1,
-    backgroundColor: Surfaces.border,
+    backgroundColor: BORDER,
     marginHorizontal: CONTENT_HORIZONTAL_PADDING,
     marginBottom: 32,
-    opacity: 0.5,
+    opacity: 0.6,
+    marginTop: 8,
   },
 
-  /* Loading State */
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC", // Match global background for loading state
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 18,
-    color: EDU_COLORS.textPrimary, // Better contrast
-    fontWeight: "600",
-  },
-  loadingIndicator: {
-    marginVertical: 20,
-  },
-
-  /* Base Card Styles */
+  /* Base cards */
   blurCard: {
     borderRadius: CORNER_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: BORDER,
     backgroundColor: "transparent",
     overflow: "hidden",
   },
   card: {
-    // Kept the original Card styles as a fallback/pattern
-    backgroundColor: Surfaces.solid,
+    backgroundColor: SURFACE,
     borderRadius: CORNER_RADIUS,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: BORDER,
     padding: CARD_HORIZONTAL_PADDING,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOpacity: 0.08, // Reduced shadow for a lighter feel
+        shadowOpacity: 0.08,
         shadowRadius: 6,
         shadowOffset: { width: 0, height: 3 },
       },
-      android: {
-        elevation: 3,
-      },
+      android: { elevation: 3 },
     }),
   },
 
-  /* Header Section */
+  /* Header */
   headerCard: {
-    // Header is fixed to the top area outside the main scroll
     marginHorizontal: CONTENT_HORIZONTAL_PADDING,
-    paddingTop: 16, // Use paddingTop instead of hardcoded PAGE_TOP_OFFSET
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    // Removed marginBottom to integrate better with the scroll area below
   },
   headerContent: {
     flexDirection: "row",
@@ -734,149 +757,165 @@ const styles = StyleSheet.create({
   headerTextContainer: {
     flex: 1,
     marginRight: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   welcomeText: {
-    fontSize: 24, // Slightly smaller for better fit
-    color: EDU_COLORS.textPrimary,
+    fontSize: 24,
+    color: PRIMARY_TEXT,
     fontWeight: "800",
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 14,
-    color: EDU_COLORS.textSecondary,
-    fontWeight: "500", // Lighter weight for hierarchy
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16, // Increased gap
-  },
-  notificationButton: {
-    position: "relative",
-    padding: 6, // Reduced padding for better alignment
-  },
-  notificationIcon: {
-    fontSize: 24, // Larger icon
-    color: EDU_COLORS.textPrimary,
-  },
+  subtitle: { fontSize: 14, color: SECONDARY_TEXT, fontWeight: "500" },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  notificationButton: { position: "relative", padding: 6 },
   notificationBadge: {
     position: "absolute",
     top: -2,
     right: -2,
-    backgroundColor: EDU_COLORS.error,
+    backgroundColor: Buttons.accentBg,
     borderRadius: 9,
     minWidth: 18,
     height: 18,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4, // Added padding for better look with "99+"
+    paddingHorizontal: 4,
   },
-  badgeText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
   avatarContainer: {
     width: 44,
     height: 44,
     borderRadius: 22,
     overflow: "hidden",
-    borderWidth: 2, // Highlight avatar
-    borderColor: EDU_COLORS.primary,
+    borderWidth: 2,
+    borderColor: PRIMARY,
   },
   avatarFallback: {
     width: "100%",
     height: "100%",
-    backgroundColor: Surfaces.solid, // Light background for fallback
+    backgroundColor: SURFACE,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: {
-    color: EDU_COLORS.textPrimary, // Better contrast
-    fontWeight: "700",
-    fontSize: 18,
-  },
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-  },
+  avatarText: { color: PRIMARY_TEXT, fontWeight: "700", fontSize: 18 },
+  avatarImage: { width: "100%", height: "100%" },
 
-  /* Status Card */
-  statusCard: {
-    marginHorizontal: CONTENT_HORIZONTAL_PADDING,
-    marginBottom: 32, // More space
-    paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    paddingVertical: 20, // Increased vertical padding
-    backgroundColor: Surfaces.solid,
-  },
-  statusContent: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statusInfo: {
-    flex: 1,
-  },
-  statusRole: {
-    fontSize: 14, // Larger role text
-    color: EDU_COLORS.primary,
-    fontWeight: "800",
-    marginBottom: 4,
-    textTransform: "uppercase",
-  },
-  statusGrade: {
-    fontSize: 18, // Larger grade text
-    color: EDU_COLORS.textPrimary,
-    fontWeight: "700",
-  },
-  pointsContainer: {
-    alignItems: "flex-end", // Align text to the right
-    marginLeft: 24,
-  },
-  pointsLabel: {
-    fontSize: 12,
-    color: EDU_COLORS.textSecondary,
-    marginBottom: 2,
-    fontWeight: "600",
-  },
-  pointsValue: {
-    fontSize: 32, // Very prominent points value
-    color: EDU_COLORS.primary,
-    fontWeight: "900", // Extra bold
-  },
-
-  /* Section Styles */
-  section: {
-    paddingHorizontal: CONTENT_HORIZONTAL_PADDING,
-  },
+  /* Insight tiles + tips (screenshot style) */
+  section: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
   },
-  sectionTextContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
+  sectionTextContainer: { flex: 1, marginRight: 12 },
   sectionTitle: {
-    fontSize: 22, // Bigger title
+    fontSize: 18,
     fontWeight: "800",
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
+    marginBottom: 10,
+  },
+  sectionSubtitle: { fontSize: 14, color: SECONDARY_TEXT },
+
+  insightRow: { flexDirection: "row" },
+  insightTile: {
+    backgroundColor: SURFACE,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        shadowOffset: { width: 0, height: 3 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  insightIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightTitle: { fontSize: 13, fontWeight: "800", color: PRIMARY_TEXT },
+  insightSubtitle: { fontSize: 12, color: SECONDARY_TEXT, marginTop: 2 },
+
+  tipCard: {
+    backgroundColor: SURFACE,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    borderRadius: 14,
+    paddingVertical: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        shadowOffset: { width: 0, height: 3 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  tipIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: PRIMARY + "1A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tipTitle: { fontSize: 14, fontWeight: "700", color: PRIMARY_TEXT },
+  tipSubtitle: { fontSize: 12, color: SECONDARY_TEXT, marginTop: 2 },
+  tipDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: BORDER,
+    marginLeft: 54,
+  },
+
+  /* Status */
+  statusCard: {
+    marginHorizontal: CONTENT_HORIZONTAL_PADDING,
+    marginBottom: 28,
+    paddingHorizontal: CARD_HORIZONTAL_PADDING,
+    paddingVertical: 20,
+    backgroundColor: SURFACE,
+  },
+  statusContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  statusInfo: { flex: 1 },
+  statusRole: {
+    fontSize: 13,
+    color: PRIMARY,
+    fontWeight: "800",
     marginBottom: 4,
+    textTransform: "uppercase",
   },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: EDU_COLORS.textSecondary,
+  statusGrade: { fontSize: 18, color: PRIMARY_TEXT, fontWeight: "700" },
+  pointsContainer: { alignItems: "flex-end", marginLeft: 24 },
+  pointsLabel: {
+    fontSize: 12,
+    color: SECONDARY_TEXT,
+    marginBottom: 2,
+    fontWeight: "600",
   },
-  viewAllButton: {
-    paddingVertical: 4,
-  },
-  viewAllText: {
-    fontSize: 14,
-    color: EDU_COLORS.primary,
-    fontWeight: "700",
-  },
+  pointsValue: { fontSize: 32, color: PRIMARY, fontWeight: "900" },
 
   /* Encouragements */
   encouragementCard: {
@@ -886,17 +925,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: 14,
-    backgroundColor: PALETTE_60_30_10.accent10, // Distinct background
+    backgroundColor: ACCENT10,
   },
   encouragementMessage: {
     flex: 1,
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
     fontWeight: "600",
     fontSize: 15,
     lineHeight: 20,
   },
   deleteButton: {
-    backgroundColor: EDU_COLORS.error,
+    backgroundColor: ERROR,
     width: 24,
     height: 24,
     alignItems: "center",
@@ -904,22 +943,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginLeft: 12,
   },
-  deleteButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 16,
-  },
+  deleteButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 
   /* Classrooms */
   classroomScrollContent: {
-    paddingHorizontal: 0, // No horizontal padding here, handled by section
-    paddingRight: CONTENT_HORIZONTAL_PADDING, // Padding for the last item
-    gap: 14, // Slightly less gap
+    paddingHorizontal: 0,
+    paddingRight: CONTENT_HORIZONTAL_PADDING,
+    gap: 14,
   },
   classroomCardWrapper: {
-    width: SCREEN_WIDTH * 0.75, // Wider cards for better content display
-    marginLeft: 0,
-    // First card needs left margin, others don't, but ScrollView handles this with gap
+    width: SCREEN_WIDTH * 0.75,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -927,74 +960,58 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
       },
-      android: {
-        elevation: 4,
-      },
+      android: { elevation: 4 },
     }),
   },
   classroomCard: {
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: CARD_VERTICAL_PADDING + 4,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: SURFACE,
   },
-  classroomContent: {
-    gap: 10,
-  },
-  classroomTitle: {
-    fontSize: 20, // Bigger title
-    fontWeight: "900",
-    color: EDU_COLORS.primary,
-  },
+  classroomContent: { gap: 10 },
+  classroomTitle: { fontSize: 20, fontWeight: "900", color: PRIMARY },
   classroomStats: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 13,
-    color: EDU_COLORS.textSecondary,
-    fontWeight: "500",
-  },
+  statLabel: { fontSize: 13, color: SECONDARY_TEXT, fontWeight: "500" },
   classroomViewCta: {
     alignSelf: "flex-start",
     marginTop: 8,
     fontSize: 14,
     fontWeight: "700",
-    color: EDU_COLORS.primary,
+    color: Buttons.accentBg,
   },
   emptyClassroomsCard: {
     padding: 24,
     alignItems: "center",
-    backgroundColor: Surfaces.solid,
+    backgroundColor: SURFACE,
     marginHorizontal: 0,
   },
   emptyClassroomsText: {
-    color: EDU_COLORS.textSecondary,
+    color: SECONDARY_TEXT,
     textAlign: "center",
     fontWeight: "600",
   },
 
-  /* Answer CTA (View All) */
+  /* “View all” button */
   answerCta: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: Buttons.primaryBg, // Using secondary for "View All"
+    backgroundColor: BUTTON_BG,
     borderWidth: 1,
-    borderColor: Buttons.primaryBg,
+    borderColor: BUTTON_BG,
   },
-  answerCtaText: {
-    color: Buttons.primaryText, // Primary color text for secondary button
-    fontWeight: "800",
-    fontSize: 13,
-  },
+  answerCtaText: { color: BUTTON_TEXT, fontWeight: "800", fontSize: 13 },
 
-  /* Questions & Answers */
+  /* Q&A cards */
   questionCard: {
     marginBottom: 10,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: CARD_VERTICAL_PADDING,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: SURFACE,
   },
   questionHeader: {
     flexDirection: "row",
@@ -1003,68 +1020,58 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   questionBadge: {
-    backgroundColor: PALETTE_60_30_10.accent10,
+    backgroundColor: PRIMARY + "22",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: PRIMARY + "44",
   },
   questionBadgeText: {
-    color: "#fff",
+    color: PRIMARY,
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     textTransform: "uppercase",
   },
-  questionDate: {
-    fontSize: 12,
-    color: EDU_COLORS.textSecondary,
-    fontWeight: "500",
-  },
+  questionDate: { fontSize: 12, color: SECONDARY_TEXT, fontWeight: "500" },
   questionText: {
     fontSize: 16,
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
     fontWeight: "700",
     lineHeight: 22,
   },
 
-  // Recent Solutions
+  /* Answers */
   answerCard: {
     marginBottom: 10,
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
     paddingVertical: CARD_VERTICAL_PADDING,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: SURFACE,
   },
-  answerPressable: {
-    paddingVertical: 4,
-    paddingBottom: 8, // Added space for hint
-  },
+  answerPressable: { paddingVertical: 4, paddingBottom: 8 },
   answerQuestion: {
     fontWeight: "700",
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
     fontSize: 16,
     lineHeight: 22,
     marginBottom: 6,
   },
-  expandHint: {
-    fontSize: 13,
-    color: EDU_COLORS.primary,
-    fontStyle: "normal", // Removed italic
-    fontWeight: "600",
-  },
+  expandHint: { fontSize: 13, color: PRIMARY, fontWeight: "600" },
   answersList: {
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Surfaces.border,
+    borderTopColor: BORDER,
     gap: 12,
   },
   solutionCard: {
-    backgroundColor: Surfaces.faint, // Lighter background for nested card
+    backgroundColor: Surfaces?.faint ?? "#F3F4F6",
     padding: 12,
     borderRadius: 8,
-    borderLeftWidth: 3, // Accent stripe
-    borderLeftColor: PALETTE_60_30_10.accent60,
+    borderLeftWidth: 3,
+    borderLeftColor: PALETTE_60_30_10?.accent60 ?? "#F59E0B",
   },
   solutionText: {
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 8,
@@ -1074,107 +1081,51 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  solutionAuthor: {
-    fontSize: 12,
-    color: EDU_COLORS.primary,
-    fontWeight: "700",
-  },
-  solutionDate: {
-    fontSize: 12,
-    color: EDU_COLORS.textSecondary,
-    fontWeight: "500",
-  },
+  solutionAuthor: { fontSize: 12, color: PRIMARY, fontWeight: "700" },
+  solutionDate: { fontSize: 12, color: SECONDARY_TEXT, fontWeight: "500" },
 
-  /* Empty States */
-  emptyState: {
-    alignItems: "center",
-    padding: 32,
-    backgroundColor: Surfaces.solid,
-  },
-  emptyIcon: {
-    fontSize: 36,
-    marginBottom: 12,
-  },
+  /* Empty states */
+  emptyState: { alignItems: "center", padding: 32, backgroundColor: SURFACE },
+  emptyIcon: { fontSize: 36, marginBottom: 12 },
   emptyText: {
     fontWeight: "700",
-    color: EDU_COLORS.textPrimary,
+    color: PRIMARY_TEXT,
     fontSize: 18,
     marginBottom: 4,
   },
-  emptySubtext: {
-    color: EDU_COLORS.textSecondary,
-    fontSize: 14,
-    textAlign: "center",
-  },
+  emptySubtext: { color: SECONDARY_TEXT, fontSize: 14, textAlign: "center" },
 
-  /* Floating Action Button (FAB) */
-  fab: {
-    position: "absolute",
-    bottom: 30, // Lowered FAB to sit above common tab bars
-    right: 24,
-    backgroundColor: Buttons.primaryBg,
-    borderRadius: 30, // Larger radius
-    paddingHorizontal: 28,
-    paddingVertical: 18,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.primary,
-        shadowOpacity: 0.4,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 5 },
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  fabText: {
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 17,
-  },
-  loadingCenterWrap: {
-    width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  /* Card that matches EduLink surface language (no blur) */
-  loadingCard: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 16,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid, // from colors.js (neutral surface)
-    borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#1F2937",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
+  /* Loading */
   loadingFullscreenCenter: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
   },
+  loadingCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
   loadingTitle: {
     marginTop: 8,
     fontSize: 18,
     fontWeight: "700",
-    color: EDU_COLORS.textPrimary ?? "#0B1220",
+    color: PRIMARY_TEXT,
     textAlign: "center",
   },
-
   loadingSubtitle: {
     fontSize: 13.5,
     lineHeight: 18,
-    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
+    color: SECONDARY_TEXT,
     textAlign: "center",
     marginBottom: 8,
   },
@@ -1182,14 +1133,16 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 8,
     borderRadius: 8,
-    backgroundColor: EDU_COLORS?.gray200 ?? "#E5E7EB",
+    backgroundColor: "#E5E7EB",
     overflow: "hidden",
     marginTop: 6,
   },
   progressBarIndeterminate: {
-    width: 80, // the moving “pill”
+    width: 80,
     height: 8,
     borderRadius: 8,
-    backgroundColor: Buttons?.primaryBg ?? "#2563EB",
+    backgroundColor: BUTTON_BG,
   },
+
+  loadingIndicator: { marginVertical: 20 },
 });

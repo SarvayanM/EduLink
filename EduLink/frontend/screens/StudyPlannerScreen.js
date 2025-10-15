@@ -1,6 +1,6 @@
 // frontend/screens/StudyPlannerScreen.js
 import Screen from "../components/Screen";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,8 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
-  Modal,
   Animated,
+  Easing,
 } from "react-native";
 import {
   TextInput,
@@ -54,13 +54,53 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
     {children}
   </BlurView>
 );
-const PAGE_TOP_OFFSET = 24;
+
+const PAGE_TOP_OFFSET = 12;
+
+/* ---------- Small appear animation wrapper ---------- */
+const Appear = ({ children, delay = 0, style }) => {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, {
+      toValue: 1,
+      duration: 260,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [a, delay]);
+  return (
+    <Animated.View
+      style={[
+        {
+          opacity: a,
+          transform: [
+            {
+              translateY: a.interpolate({
+                inputRange: [0, 1],
+                outputRange: [8, 0],
+              }),
+            },
+            {
+              scale: a.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.98, 1],
+              }),
+            },
+          ],
+        },
+        style,
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
 function useToast() {
   const insets = useSafeAreaInsets();
-  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
-
-  return React.useCallback(
+  const topOffset = (insets?.top || 0) + (NAVBAR_HEIGHT || 0) + 8;
+  return useCallback(
     (type, text1, text2) => {
       Toast.show({
         type, // "success" | "error" | "info"
@@ -75,10 +115,9 @@ function useToast() {
   );
 }
 
-// after other useState hooks
-
 export default function StudyPlannerScreen() {
   const showToast = useToast();
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
   const [studySessions, setStudySessions] = useState([]);
@@ -89,6 +128,7 @@ export default function StudyPlannerScreen() {
 
   // Task form
   const [taskTitle, setTaskTitle] = useState("");
+
   const [taskDescription, setTaskDescription] = useState("");
   const [taskSubject, setTaskSubject] = useState("");
   const [taskPriority, setTaskPriority] = useState("medium");
@@ -106,8 +146,9 @@ export default function StudyPlannerScreen() {
   const [sessionDescription, setSessionDescription] = useState("");
   const [sessionDuration, setSessionDuration] = useState("60");
 
+  // Loading bar animation
   const [trackW, setTrackW] = useState(0);
-  const barAnim = React.useRef(new Animated.Value(0)).current;
+  const barAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!loading) return;
@@ -117,6 +158,7 @@ export default function StudyPlannerScreen() {
           toValue: 1,
           duration: 1100,
           useNativeDriver: true,
+          easing: Easing.inOut(Easing.cubic),
         }),
         Animated.timing(barAnim, {
           toValue: 0,
@@ -131,20 +173,8 @@ export default function StudyPlannerScreen() {
 
   const barTranslate = barAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-80, Math.max(trackW - 80, 0)], // width-aware
+    outputRange: [-80, Math.max(trackW - 80, 0)],
   });
-
-  const subjects = [
-    "Math",
-    "Science",
-    "English",
-    "History",
-    "Geography",
-    "Physics",
-    "Chemistry",
-    "Biology",
-    "Other",
-  ];
 
   useEffect(() => {
     fetchTasks();
@@ -178,7 +208,7 @@ export default function StudyPlannerScreen() {
   }
 
   /* -------------------- Data -------------------- */
-  const fetchTasks = async (skipLoadingToggle = false) => {
+  const fetchTasks = async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -214,11 +244,10 @@ export default function StudyPlannerScreen() {
       setTasks(forDay);
     } catch (e) {
       console.error("fetchTasks", e);
-    } finally {
     }
   };
 
-  const fetchStudySessions = async (skipLoadingToggle = false) => {
+  const fetchStudySessions = async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -438,7 +467,7 @@ export default function StudyPlannerScreen() {
 
           {/* Indeterminate progress bar */}
           <View
-            style={styles.progressTrack}
+            style={styles.progressTrackIndeterminate}
             onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
           >
             <Animated.View
@@ -458,7 +487,7 @@ export default function StudyPlannerScreen() {
     <View style={styles.screen}>
       {/* Header */}
       <BlurCard style={styles.chatBubble}>
-        <Title style={styles.headerTitle}>📚 Study Planner</Title>
+        <Title style={styles.headerTitle}>📚 Plan Your Study Here</Title>
         <View style={styles.dateRow}>
           <IconButton
             icon="chevron-left"
@@ -497,132 +526,134 @@ export default function StudyPlannerScreen() {
       >
         {/* Stats */}
         <View style={styles.statsRow}>
-          <BlurCard style={styles.statCardInline}>
-            <Card.Content style={styles.statContent}>
-              <Text style={styles.statNumber}>{tasks.length}</Text>
-              <Text style={styles.statLabel}>Tasks</Text>
-            </Card.Content>
-          </BlurCard>
+          <Appear>
+            <View style={styles.tileCard}>
+              <Text style={styles.tileTitle}>🗂️ Tasks</Text>
+              <Text style={styles.tileNumber}>{tasks.length}</Text>
+            </View>
+          </Appear>
 
-          <BlurCard style={styles.statCardInline}>
-            <Card.Content style={styles.statContent}>
-              <Text style={styles.statNumber}>
+          <Appear delay={30}>
+            <View style={styles.tileCard}>
+              <Text style={styles.tileTitle}>✅ Completed</Text>
+              <Text style={styles.tileNumber}>
                 {tasks.filter((t) => t.completed).length}
               </Text>
-              <Text style={styles.statLabel}>Completed</Text>
-            </Card.Content>
-          </BlurCard>
+            </View>
+          </Appear>
 
-          <BlurCard style={styles.statCardInline}>
-            <Card.Content style={styles.statContent}>
-              <Text style={styles.statNumber}>{getTotalStudyTime()}</Text>
-              <Text style={styles.statLabel}>Min Studied</Text>
-            </Card.Content>
-          </BlurCard>
+          <Appear delay={60}>
+            <View style={styles.tileCard}>
+              <Text style={styles.tileTitle}>⏱️ Min Studied</Text>
+              <Text style={styles.tileNumber}>{getTotalStudyTime()}</Text>
+            </View>
+          </Appear>
         </View>
 
         {/* Active Session */}
         {activeSession && (
-          <BlurCard
-            style={[
-              styles.chatBubble,
-              styles.sessionActiveCard,
-              isPaused && styles.sessionPausedCard,
-            ]}
-          >
-            <Card.Content>
-              <View style={styles.sessionHead}>
-                <Text style={styles.sessionTitle}>
-                  {isPaused
-                    ? "⏸️ Paused Study Session"
-                    : "🎯 Active Study Session"}
-                </Text>
-                <Text style={styles.sessionSubject}>
-                  {activeSession.subject}
-                </Text>
-              </View>
+          <Appear>
+            <BlurCard
+              style={[
+                styles.chatBubble,
+                styles.sessionActiveCard,
+                isPaused && styles.sessionPausedCard,
+              ]}
+            >
+              <Card.Content>
+                <View style={styles.sessionHead}>
+                  <Text style={styles.sessionTitle}>
+                    {isPaused
+                      ? "⏸️ Paused Study Session"
+                      : "🎯 Active Study Session"}
+                  </Text>
+                  <Text style={styles.sessionSubject}>
+                    {activeSession.subject}
+                  </Text>
+                </View>
 
-              {!!activeSession.description && (
-                <Text style={styles.sessionDesc}>
-                  {activeSession.description}
-                </Text>
-              )}
+                {!!activeSession.description && (
+                  <Text style={styles.sessionDesc}>
+                    {activeSession.description}
+                  </Text>
+                )}
 
-              <View style={styles.statusWrap}>
-                <Text
-                  style={[
-                    styles.statusBadge,
-                    isPaused ? styles.badgePaused : styles.badgeActive,
-                  ]}
-                >
-                  {isPaused ? "PAUSED" : "ACTIVE"}
-                </Text>
-              </View>
-
-              <View style={styles.sessionActions}>
-                {!isPaused ? (
-                  <Button
-                    mode="outlined"
-                    onPress={pauseStudySession}
-                    icon="pause"
-                    compact
-                    style={styles.btnOutlined}
-                    textColor={EDU_COLORS.warning}
-                    theme={{ colors: { primary: EDU_COLORS.warning } }}
+                <View style={styles.statusWrap}>
+                  <Text
+                    style={[
+                      styles.statusBadge,
+                      isPaused ? styles.badgePaused : styles.badgeActive,
+                    ]}
                   >
-                    Pause
-                  </Button>
-                ) : (
+                    {isPaused ? "PAUSED" : "ACTIVE"}
+                  </Text>
+                </View>
+
+                <View style={styles.sessionActions}>
+                  {!isPaused ? (
+                    <Button
+                      mode="outlined"
+                      onPress={pauseStudySession}
+                      icon="pause"
+                      compact
+                      style={styles.btnOutlined}
+                      textColor={EDU_COLORS.warning}
+                      theme={{ colors: { primary: EDU_COLORS.warning } }}
+                    >
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button
+                      mode="contained"
+                      onPress={resumeStudySession}
+                      icon="play"
+                      compact
+                      style={styles.btnContainedSuccess}
+                    >
+                      Resume
+                    </Button>
+                  )}
                   <Button
                     mode="contained"
-                    onPress={resumeStudySession}
-                    icon="play"
+                    onPress={endStudySession}
+                    icon="stop"
                     compact
-                    style={styles.btnContainedSuccess}
+                    style={styles.btnContainedDanger}
                   >
-                    Resume
+                    End
                   </Button>
-                )}
-                <Button
-                  mode="contained"
-                  onPress={endStudySession}
-                  icon="stop"
-                  compact
-                  style={styles.btnContainedDanger}
-                >
-                  End
-                </Button>
-              </View>
+                </View>
 
-              <View style={styles.durationBox}>
-                <View style={styles.durationRow}>
-                  <Text style={styles.durationLabel}>Duration</Text>
-                  <Text style={styles.durationValue}>
-                    {getCurrentSessionDuration()} min
-                  </Text>
-                </View>
-                <View style={styles.durationRow}>
-                  <Text style={styles.durationSub}>Estimated</Text>
-                  <Text style={styles.durationSubVal}>
-                    {activeSession.duration} min
-                  </Text>
-                </View>
-                {pausedTime > 0 && (
+                <View style={styles.durationBox}>
                   <View style={styles.durationRow}>
-                    <Text style={styles.durationSub}>Paused</Text>
-                    <Text
-                      style={[
-                        styles.durationSubVal,
-                        { color: EDU_COLORS.warning },
-                      ]}
-                    >
-                      {pausedTime} min
+                    <Text style={styles.durationLabel}>Duration</Text>
+                    <Text style={styles.durationValue}>
+                      {getCurrentSessionDuration()} min
                     </Text>
                   </View>
-                )}
-              </View>
-            </Card.Content>
-          </BlurCard>
+                  <View style={styles.durationRow}>
+                    <Text style={styles.durationSub}>Estimated</Text>
+                    <Text style={styles.durationSubVal}>
+                      {activeSession.duration} min
+                    </Text>
+                  </View>
+                  {pausedTime > 0 && (
+                    <View style={styles.durationRow}>
+                      <Text style={styles.durationSub}>Paused</Text>
+                      <Text
+                        style={[
+                          styles.durationSubVal,
+                          { color: EDU_COLORS.warning },
+                        ]}
+                      >
+                        {pausedTime} min
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Card.Content>
+            </BlurCard>
+          </Appear>
         )}
 
         {/* Tasks */}
@@ -655,65 +686,73 @@ export default function StudyPlannerScreen() {
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled
               >
-                {tasks.map((task) => (
-                  <BlurCard key={task.id} style={styles.chatBubble}>
-                    <Card.Content>
-                      <View style={styles.itemHead}>
-                        <View style={{ flex: 1, marginRight: 10 }}>
-                          <Text style={styles.itemTitle}>{task.title}</Text>
-                          <Text style={styles.itemSubject}>{task.subject}</Text>
+                {tasks.map((task, i) => (
+                  <Appear key={task.id} delay={i * 20}>
+                    <BlurCard style={styles.chatBubble}>
+                      <Card.Content>
+                        <View style={styles.itemHead}>
+                          <View style={{ flex: 1, marginRight: 10 }}>
+                            <Text style={styles.itemTitle}>{task.title}</Text>
+                            <Text style={styles.itemSubject}>
+                              {task.subject}
+                            </Text>
+                          </View>
+                          <View style={styles.itemActions}>
+                            <Chip
+                              style={[
+                                styles.priorityChip,
+                                {
+                                  backgroundColor: getPriorityColor(
+                                    task.priority
+                                  ),
+                                },
+                              ]}
+                              textStyle={styles.priorityText}
+                            >
+                              {task.priority}
+                            </Chip>
+                            <IconButton
+                              icon={
+                                task.completed
+                                  ? "check-circle"
+                                  : "circle-outline"
+                              }
+                              size={20}
+                              onPress={() =>
+                                updateTask(task.id, {
+                                  completed: !task.completed,
+                                })
+                              }
+                              iconColor={
+                                task.completed
+                                  ? EDU_COLORS.success
+                                  : EDU_COLORS.gray500
+                              }
+                            />
+                            <IconButton
+                              icon="delete"
+                              size={20}
+                              onPress={() => deleteTask(task.id)}
+                              iconColor="#EF4444"
+                            />
+                          </View>
                         </View>
-                        <View style={styles.itemActions}>
-                          <Chip
-                            style={[
-                              styles.priorityChip,
-                              {
-                                backgroundColor: getPriorityColor(
-                                  task.priority
-                                ),
-                              },
-                            ]}
-                            textStyle={styles.priorityText}
-                          >
-                            {task.priority}
-                          </Chip>
-                          <IconButton
-                            icon={
-                              task.completed ? "check-circle" : "circle-outline"
-                            }
-                            size={20}
-                            onPress={() =>
-                              updateTask(task.id, {
-                                completed: !task.completed,
-                              })
-                            }
-                            iconColor={
-                              task.completed
-                                ? EDU_COLORS.success
-                                : EDU_COLORS.gray500
-                            }
-                          />
-                          <IconButton
-                            icon="delete"
-                            size={20}
-                            onPress={() => deleteTask(task.id)}
-                            iconColor="#EF4444"
-                          />
+
+                        {!!task.description && (
+                          <Text style={styles.itemDesc}>
+                            {task.description}
+                          </Text>
+                        )}
+
+                        <View style={styles.itemMeta}>
+                          <Text style={styles.metaText}>
+                            Due: {formatTime(task.dueDate)} • Est:{" "}
+                            {task.estimatedTime || 0} min
+                          </Text>
                         </View>
-                      </View>
-
-                      {!!task.description && (
-                        <Text style={styles.itemDesc}>{task.description}</Text>
-                      )}
-
-                      <View style={styles.itemMeta}>
-                        <Text style={styles.metaText}>
-                          Due: {formatTime(task.dueDate)} • Est:{" "}
-                          {task.estimatedTime || 0} min
-                        </Text>
-                      </View>
-                    </Card.Content>
-                  </BlurCard>
+                      </Card.Content>
+                    </BlurCard>
+                  </Appear>
                 ))}
               </ScrollView>
             </View>
@@ -750,9 +789,10 @@ export default function StudyPlannerScreen() {
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled
               >
-                {studySessions.map((s) => (
-                  <Card key={s.id} style={styles.itemCard}>
-                    <Card.Content>
+                {studySessions.map((s, i) => (
+                  <Appear key={s.id} delay={i * 20}>
+                    {/* swapped from Paper Card (white) to compact tile */}
+                    <View style={[styles.tileCard, { marginBottom: 10 }]}>
                       <View style={styles.sessionRow}>
                         <Text style={styles.sessionSubject}>{s.subject}</Text>
                         <View style={{ alignItems: "flex-end" }}>
@@ -790,8 +830,8 @@ export default function StudyPlannerScreen() {
                           </Text>
                         )}
                       </View>
-                    </Card.Content>
-                  </Card>
+                    </View>
+                  </Appear>
                 ))}
               </ScrollView>
             </View>
@@ -936,24 +976,26 @@ export default function StudyPlannerScreen() {
 }
 
 /* ===================== Styles (tokens-driven) ===================== */
+const CARD_BG = Surfaces?.solid ?? "#0B1220";
+const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
+
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 120, paddingHorizontal: 16 },
   screen: {
     flex: 1,
-    paddingTop: PAGE_TOP_OFFSET, // shift ALL children down uniformly
-    // global gradient shows
+    paddingTop: PAGE_TOP_OFFSET,
   },
 
-  /* Overlay for dialogs (requested color) */
+  /* Overlay for dialogs */
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.75)", // deep slate w/ 75% alpha
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 9999,
   },
 
-  progressTrack: {
+  /* Indeterminate progress (loading screen) */
+  progressTrackIndeterminate: {
     width: "100%",
     height: 8,
     borderRadius: 8,
@@ -972,7 +1014,7 @@ const styles = StyleSheet.create({
   blurCard: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     overflow: "hidden",
   },
   chatBubble: {
@@ -1002,7 +1044,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
   },
   dateText: { color: EDU_COLORS.gray800, fontSize: 14, fontWeight: "800" },
   todayHint: { color: EDU_COLORS.gray500, fontSize: 10, marginTop: 2 },
@@ -1010,37 +1052,44 @@ const styles = StyleSheet.create({
   /* Content */
   content: { flex: 1, marginTop: 6 },
 
-  /* Stats */
+  /* Stats as compact tiles */
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "stretch",
-    gap: 8, // spacing between cards
-    marginHorizontal: 16, // align to your 16px rails
+    gap: 8,
+    marginHorizontal: 16,
     marginBottom: 12,
   },
-
-  statCardInline: {
+  tileCard: {
     flex: 1,
-    minWidth: 0, // prevent overflow on small screens
-    marginHorizontal: 0, // IMPORTANT: no horizontal margins here
-    marginBottom: 0,
-    paddingHorizontal: 14, // keep your nice padding
-    paddingVertical: 12,
-    // (the BlurCard base already gives border/borderRadius/blur)
+    minWidth: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowColor: EDU_COLORS.shadow || "#000",
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 6 },
+    }),
   },
-
-  statContent: { alignItems: "center", paddingVertical: 1 },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: PALETTE_60_30_10.accent10,
-  },
-  statLabel: {
+  tileTitle: {
     fontSize: 12,
+    fontWeight: "800",
     color: EDU_COLORS.gray600,
-    marginTop: 4,
-    fontWeight: "700",
+    marginBottom: 6,
+  },
+  tileNumber: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: Buttons.accentBg,
   },
 
   /* Active session card */
@@ -1048,9 +1097,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: PALETTE_60_30_10.accent10,
   },
-  sessionPausedCard: {
-    borderLeftColor: EDU_COLORS.warning,
-  },
+  sessionPausedCard: { borderLeftColor: EDU_COLORS.warning },
   sessionHead: {
     flexDirection: "row",
     alignItems: "center",
@@ -1094,10 +1141,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexWrap: "wrap",
   },
-  btnOutlined: {
-    borderRadius: 20,
-    borderColor: EDU_COLORS.warning,
-  },
+  btnOutlined: { borderRadius: 20, borderColor: EDU_COLORS.warning },
   btnContainedSuccess: {
     borderRadius: 20,
     backgroundColor: EDU_COLORS.success,
@@ -1109,7 +1153,7 @@ const styles = StyleSheet.create({
     backgroundColor: EDU_COLORS.gray50,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     padding: 12,
   },
   durationRow: {
@@ -1144,22 +1188,6 @@ const styles = StyleSheet.create({
   listClamp: { maxHeight: 300 },
 
   /* Generic list cards */
-  itemCard: {
-    backgroundColor: Surfaces.solid,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
-    marginBottom: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: EDU_COLORS.shadow,
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 1 },
-      },
-      android: { elevation: 2 },
-    }),
-  },
   itemHead: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1190,7 +1218,7 @@ const styles = StyleSheet.create({
   priorityChip: { marginRight: 6, borderRadius: 12 },
   priorityText: { color: "#fff", fontSize: 10, fontWeight: "800" },
 
-  /* Sessions list */
+  /* Sessions list (tiles) */
   sessionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1226,11 +1254,10 @@ const styles = StyleSheet.create({
 
   /* Dialogs (modals) */
   dialog: {
-    borderRadius: 16,
-    backgroundColor: Surfaces.solid,
+    backgroundColor: CARD_BG,
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Surfaces.border,
+    borderColor: CARD_BORDER,
     overflow: "hidden",
     ...Platform.select({
       ios: {
@@ -1262,13 +1289,13 @@ const styles = StyleSheet.create({
   prChip: { borderRadius: 12 },
   prChipText: { fontSize: 12, fontWeight: "800", color: EDU_COLORS.gray700 },
 
+  /* Loading screen */
   loadingFullscreenCenter: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
   },
-
   loadingCard: {
     width: "100%",
     maxWidth: 520,
@@ -1277,12 +1304,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: EDU_COLORS.surfaceSolid,
     borderWidth: 1,
-    borderColor: Surfaces?.border ?? "#1F2937",
+    borderColor: CARD_BORDER,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
   },
-
   loadingTitle: {
     marginTop: 8,
     fontSize: 18,
@@ -1290,26 +1316,11 @@ const styles = StyleSheet.create({
     color: EDU_COLORS.textPrimary ?? "#0B1220",
     textAlign: "center",
   },
-
   loadingSubtitle: {
     fontSize: 13.5,
     lineHeight: 18,
     color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
     textAlign: "center",
     marginBottom: 8,
-  },
-  progressTrack: {
-    width: "100%",
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: EDU_COLORS.gray200,
-    overflow: "hidden",
-    marginTop: 6,
-  },
-  progressBar: {
-    width: 80,
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: EDU_COLORS.primary,
   },
 });

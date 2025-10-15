@@ -55,8 +55,9 @@ const Tab = createBottomTabNavigator();
 
 <LinearGradient
   colors={APP_GRADIENT}
-  start={{ x: 0.0, y: 0.0 }}
-  end={{ x: 1.0, y: 1.0 }}
+  start={{ x: 0, y: 0 }}
+  end={{ x: 0, y: 1 }}
+  locations={[0, 0.4, 1]}
   style={StyleSheet.absoluteFill}
 />;
 
@@ -333,16 +334,19 @@ function RootApp() {
         // App gradient for the rest of the app
         <LinearGradient
           colors={APP_GRADIENT}
-          start={{ x: 0.0, y: 0.0 }}
-          end={{ x: 1.0, y: 1.0 }}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          locations={[0, 0.17, 1]}
           style={StyleSheet.absoluteFill}
         />
       )}
 
       {/* Fixed top navbar */}
+      {/* Fixed top navbar */}
       <TopNavbar
         currentRouteName={topRouteName}
         onBack={() => navigationRef.current?.goBack?.()}
+        navigationRef={navigationRef} // ✅ provide ref so navbar can navigate
       />
 
       {/* Spacer exactly equal to navbar */}
