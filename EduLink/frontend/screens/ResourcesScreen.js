@@ -18,6 +18,7 @@ import {
   Platform,
   Animated,
   ActivityIndicator,
+  Easing,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
@@ -103,6 +104,58 @@ function useToast() {
   );
 }
 
+const LoadingCard = ({
+  title = "Loading Q&A",
+  subtitle = "Fetching the latest unanswered questions…",
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = React.useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+        easing: Easing.inOut(Easing.cubic),
+      })
+    );
+    loop.start();
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
+  }, [anim]);
+
+  const translateX =
+    trackW > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-80, Math.max(trackW - 80, 0)],
+        })
+      : 0;
+
+  return (
+    <View style={styles.loadingCenterWrap}>
+      <View style={styles.tileCard}>
+        <Text style={styles.tileTitle}>⏳ {title}</Text>
+        <Text style={styles.tileSubtitle}>{subtitle}</Text>
+
+        <View
+          style={styles.progressTrack}
+          onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[
+              styles.progressBar,
+              trackW ? { transform: [{ translateX }] } : null,
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+};
+
 /* ---------- Animated loading strip (with proper cleanup) ---------- */
 const LoadingStrip = ({
   title = "Loading Resources",
@@ -172,7 +225,7 @@ export default function ResourcesScreen() {
   const [userRole, setUserRole] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadData, setUploadData] = useState({
@@ -608,7 +661,10 @@ export default function ResourcesScreen() {
       >
         {loading ? (
           <SafeAreaView style={styles.loadingContainer}>
-            <LoadingStrip />
+            <LoadingCard
+              title="Loading Resources"
+              subtitle="Fetching shared files and personalizing by your grade…"
+            />
           </SafeAreaView>
         ) : filtered.length ? (
           filtered.map((r) => (
@@ -1092,6 +1148,8 @@ function ResourceTile({ r, userRole, onView, onDownload }) {
 }
 
 /* ================= styles ================= */
+const CARD_BG = Surfaces?.solid ?? "#FFFFFF";
+const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
 const styles = StyleSheet.create({
   // Global Layout
   screen: {
@@ -1351,7 +1409,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingTop: 50,
+    backgroundColor: "transparent",
   },
   emptyBox: {
     alignItems: "center",
@@ -1622,10 +1680,30 @@ const styles = StyleSheet.create({
 
   // Loading card
   loadingCenterWrap: {
+    flex: 1,
     width: "100%",
     paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  tileCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
   },
   loadingCard: {
     width: "100%",
@@ -1640,6 +1718,39 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
   },
+  tile: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2,
+    paddingVertical: 14,
+  },
+  px16: { paddingHorizontal: 16 },
+
+  tileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  tileTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+  },
+  tileSubtitle: {
+    fontSize: 13.5,
+    color: EDU_COLORS.textSecondary,
+    marginTop: 2,
+  },
+
   loadingTitle: {
     marginTop: 4,
     fontSize: 18,

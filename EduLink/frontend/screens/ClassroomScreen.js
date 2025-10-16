@@ -1,6 +1,6 @@
 // frontend/screens/ClassroomScreen.js
 import Screen from "../components/Screen";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -9,13 +9,13 @@ import {
   Image,
   Modal,
   FlatList,
-  Platform,
   Animated,
   StyleSheet,
   RefreshControl,
   Keyboard,
   Dimensions,
   Alert,
+  PanResponder,
 } from "react-native";
 import {
   TextInput,
@@ -28,6 +28,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 import {
   EDU_COLORS,
@@ -94,27 +95,6 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   </BlurView>
 );
 
-const PAGE_TOP_OFFSET = 24;
-
-function useToast() {
-  const insets = useSafeAreaInsets();
-  const topOffset = insets.top + NAVBAR_HEIGHT + 8;
-
-  return React.useCallback(
-    (type, text1, text2) => {
-      Toast.show({
-        type, // "success" | "error" | "info"
-        text1,
-        text2,
-        position: "top",
-        topOffset,
-        visibilityTime: 2600,
-      });
-    },
-    [topOffset]
-  );
-}
-
 const GradientButton = ({
   title,
   onPress,
@@ -130,21 +110,190 @@ const GradientButton = ({
     style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
   >
     <LinearGradient
-      colors={[Buttons.primaryBg, Buttons.primaryBg]} // subtle sheen, same palette
+      colors={[Buttons.primaryBg, Buttons.primaryBg]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[styles.gradientBtn, disabled && { opacity: 0.6 }, style]}
     >
-      <Text style={[styles.gradientBtnText, textStyle]}>{title}</Text>
+      <View style={styles.gradientBtnInner}>
+        {left}
+        <Text style={[styles.gradientBtnText, textStyle]}>{title}</Text>
+        {right}
+      </View>
     </LinearGradient>
   </Pressable>
 );
 
+/* ---------- Bubble component (FIX: hooks are legal here) ---------- */
+const QuestionBubble = memo(function QuestionBubble({
+  q,
+  index,
+  isMine,
+  expanded,
+  onToggleExpand,
+  onDelete,
+  onAnswerPress,
+}) {
+  const appear = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(appear, {
+      toValue: 1,
+      duration: 240,
+      delay: index * 20,
+      useNativeDriver: true,
+    }).start();
+  }, [appear, index]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.chatContainer,
+        isMine ? styles.myQuestionContainer : styles.othersQuestionContainer,
+        {
+          opacity: appear,
+          transform: [
+            {
+              translateY: appear.interpolate({
+                inputRange: [0, 1],
+                outputRange: [8, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {!isMine && (
+        <Text style={styles.chatNameLabel}>{q.askedByName || "Anonymous"}</Text>
+      )}
+
+      <BlurCard style={[styles.chatBubble]}>
+        <Pressable
+          onPress={() => onToggleExpand(q.id)}
+          onLongPress={
+            isMine
+              ? () => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onDelete(q.id, q.question || "");
+                }
+              : undefined
+          }
+          accessibilityRole="button"
+        >
+          {q.image ? (
+            <Pressable
+              onPress={() => onToggleExpand(q.id, true /* open image */)}
+              accessibilityRole="imagebutton"
+              style={{ marginBottom: 8 }}
+            >
+              <Image source={{ uri: q.image }} style={styles.questionImage} />
+            </Pressable>
+          ) : null}
+
+          {!!q.title && (
+            <Text
+              style={[styles.chatTitleText, styles.textStrong]}
+              numberOfLines={2}
+            >
+              {q.title}
+            </Text>
+          )}
+
+          {!!q.question && (
+            <Text style={styles.chatQuestionText}>{q.question}</Text>
+          )}
+
+          {q.subject && (
+            <View
+              style={[
+                styles.subjectPill,
+                isMine ? styles.mySubjectPill : styles.othersSubjectPill,
+              ]}
+            >
+              <Ionicons
+                name="pricetag-outline"
+                size={12}
+                color={isMine ? Buttons.subtleText : Buttons.chipActiveText}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  styles.subjectPillText,
+                  isMine
+                    ? styles.mySubjectPillText
+                    : styles.othersSubjectPillText,
+                ]}
+              >
+                {q.subject}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.chatMetaRow}>
+            <Text style={styles.chatMeta}>
+              {q.status} •{" "}
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={12}
+                color={EDU_COLORS.gray600}
+              />{" "}
+              {q.answers?.length || 0}
+              {isMine && (
+                <Text style={styles.longPressHint}> • Hold to delete</Text>
+              )}
+            </Text>
+
+            {!isMine && (
+              <GradientButton
+                title="Answer"
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onAnswerPress(q);
+                }}
+                style={styles.answerBtn}
+                textStyle={styles.answerBtnLabel}
+                left={<Ionicons name="send-outline" size={14} color="#fff" />}
+              />
+            )}
+          </View>
+
+          {expanded && q.answers?.length > 0 && (
+            <View style={styles.chatAnswersSection}>
+              {q.answers.map((ans, i) => (
+                <View key={i} style={styles.chatAnswerCard}>
+                  <Text style={styles.chatAnswerText}>{ans.answer}</Text>
+                  <Text style={styles.chatAnswerMeta}>
+                    By {ans.answeredByName}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Pressable>
+      </BlurCard>
+    </Animated.View>
+  );
+});
+
 /* ================================================================ */
 export default function ClassroomScreen({ route }) {
-  const showToast = useToast();
   const insets = useSafeAreaInsets();
   const { classroom } = route.params || {};
+
+  /* ---------- Toast ---------- */
+  const showToast = useCallback(
+    (type, text1, text2) => {
+      Toast.show({
+        type,
+        text1,
+        text2,
+        position: "top",
+        topOffset: insets.top + NAVBAR_HEIGHT + 8,
+        visibilityTime: 2600,
+      });
+    },
+    [insets.top]
+  );
 
   /* ---------- User & data ---------- */
   const [userRole, setUserRole] = useState(null);
@@ -174,16 +323,22 @@ export default function ClassroomScreen({ route }) {
   const [showImageModal, setShowImageModal] = useState(false);
   const [modalImage, setModalImage] = useState(null);
 
-  /* ---------- Refs ---------- */
+  /* ---------- Refs & animation ---------- */
   const flatListRef = useRef(null);
-  const fadeAnims = useRef({});
   const keyboardOffset = useRef(new Animated.Value(0)).current;
-  const fabScale = useRef(new Animated.Value(1)).current;
-  const modalAnim = useRef(
+  const modalAnimAsk = useRef(
     new Animated.Value(Dimensions.get("window").height)
   ).current;
+  const modalAnimAnswer = useRef(
+    new Animated.Value(Dimensions.get("window").height)
+  ).current;
+  const modalAnimHistory = useRef(
+    new Animated.Value(Dimensions.get("window").height)
+  ).current;
+  const pan = useRef(new Animated.ValueXY()).current;
+  const isDragging = useRef(false);
 
-  /* ---------- Effects ---------- */
+  /* ---------- Effects: load ---------- */
   useEffect(() => {
     (async () => {
       await fetchUser();
@@ -192,97 +347,77 @@ export default function ClassroomScreen({ route }) {
     })();
   }, []);
 
+  /* ---------- Effects: role/grade filter ---------- */
   useEffect(() => {
     setQuestions(
       filterByRoleAndGrade(allQuestions, userRole, userGrade, classroom?.grade)
     );
   }, [allQuestions, userRole, userGrade, classroom?.grade]);
 
-  // Auto-scroll to bottom when questions change
+  /* ---------- Effects: auto-scroll to latest ---------- */
   useEffect(() => {
     if (questions.length > 0 && flatListRef.current) {
       setTimeout(() => {
         try {
-          // For inverted lists, scroll to offset 0 to show latest
           flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
         } catch (error) {
           console.log("Scroll error (non-critical):", error);
         }
-      }, 100);
+      }, 120);
     }
   }, [questions]);
 
+  /* ---------- Effects: keyboard (applied to input bar) ---------- */
   useEffect(() => {
-    const showListener = Keyboard.addListener("keyboardWillShow", (e) => {
+    const onShow = (e) => {
+      const h = e?.endCoordinates?.height ?? 0;
       Animated.timing(keyboardOffset, {
-        toValue: e.endCoordinates.height,
-        duration: e.duration || 250,
+        toValue: h,
+        duration: e?.duration ?? 200,
         useNativeDriver: true,
       }).start();
-    });
-    const hideListener = Keyboard.addListener("keyboardWillHide", (e) => {
-      Animated.timing(keyboardOffset, {
-        toValue: 0,
-        duration: e.duration || 250,
-        useNativeDriver: true,
-      }).start();
-    });
-    return () => {
-      showListener.remove();
-      hideListener.remove();
     };
-  }, []);
+    const onHide = (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: e?.duration ?? 200,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const subs = [
+      Keyboard.addListener("keyboardWillShow", onShow),
+      Keyboard.addListener("keyboardWillHide", onHide),
+      Keyboard.addListener("keyboardDidShow", onShow),
+      Keyboard.addListener("keyboardDidHide", onHide),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, [keyboardOffset]);
+
+  /* ---------- Effects: modal slide-ins (separate anims) ---------- */
+  useEffect(() => {
+    Animated.timing(modalAnimAsk, {
+      toValue: showQuestionForm ? 0 : Dimensions.get("window").height,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [showQuestionForm, modalAnimAsk]);
 
   useEffect(() => {
-    if (showQuestionForm) {
-      modalAnim.setValue(Dimensions.get("window").height);
-      Animated.timing(modalAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(modalAnim, {
-        toValue: Dimensions.get("window").height,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showQuestionForm]);
+    Animated.timing(modalAnimAnswer, {
+      toValue: showAnswerForm ? 0 : Dimensions.get("window").height,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [showAnswerForm, modalAnimAnswer]);
 
   useEffect(() => {
-    if (showAnswerForm) {
-      modalAnim.setValue(Dimensions.get("window").height);
-      Animated.timing(modalAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(modalAnim, {
-        toValue: Dimensions.get("window").height,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showAnswerForm]);
-
-  useEffect(() => {
-    if (showMyQuestions) {
-      modalAnim.setValue(Dimensions.get("window").height);
-      Animated.timing(modalAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(modalAnim, {
-        toValue: Dimensions.get("window").height,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showMyQuestions]);
+    Animated.timing(modalAnimHistory, {
+      toValue: showMyQuestions ? 0 : Dimensions.get("window").height,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [showMyQuestions, modalAnimHistory]);
 
   /* ---------- Firestore ---------- */
   const fetchUser = async () => {
@@ -357,7 +492,6 @@ export default function ClassroomScreen({ route }) {
       showToast("error", "Please type a question or attach an image.");
       return;
     }
-
     if (!selectedSubject) {
       showToast("error", "Select subject to send");
       return;
@@ -365,7 +499,6 @@ export default function ClassroomScreen({ route }) {
 
     try {
       const questionGrade = classroom?.grade || userGrade;
-
       const payload = {
         title: (questionTitle || "").trim(),
         question: question.trim(),
@@ -388,10 +521,8 @@ export default function ClassroomScreen({ route }) {
       setSelectedImage(null);
       setShowQuestionForm(false);
       showToast("success", "Your question was posted!");
-
       await fetchAllQuestions();
 
-      // Auto-scroll to bottom to show the new question
       setTimeout(() => {
         try {
           flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -405,32 +536,19 @@ export default function ClassroomScreen({ route }) {
   };
 
   const submitAnswer = async () => {
-    console.log("=== SUBMIT ANSWER STARTED ===");
-    console.log("Answer text:", answer);
-    console.log("Selected question:", selectedQuestionItem);
-    console.log("Current user:", auth.currentUser?.uid);
-    console.log("User name:", userName);
-
     if (!answer.trim()) {
-      console.log("❌ Empty answer detected");
       showToast("error", "Please enter your answer.");
       return;
     }
-
     if (!selectedQuestionItem) {
-      console.error("❌ No question selected!");
       showToast("error", "No question selected.");
       return;
     }
-
     if (!auth.currentUser) {
-      console.error("❌ No authenticated user!");
       showToast("error", "Please log in to submit answers.");
       return;
     }
-
     if (!userName) {
-      console.error("❌ No username available!");
       showToast("error", "User name not loaded. Please refresh and try again.");
       return;
     }
@@ -450,9 +568,8 @@ export default function ClassroomScreen({ route }) {
       ];
 
       await updateDoc(qRef, { answers: updatedAnswers, status: "answered" });
-      console.log("✅ Question document updated successfully!");
 
-      // +5 points and auto-promotion
+      // +5 points & potential promotion
       const meRef = doc(db, "users", auth.currentUser.uid);
       const me = await getDoc(meRef);
       if (me.exists()) {
@@ -487,14 +604,10 @@ export default function ClassroomScreen({ route }) {
       setAnswer("");
       setShowAnswerForm(false);
       setSelectedQuestionItem(null);
-      console.log("✅ UI state cleared successfully!");
       showToast("success", "Answer submitted! (+5 points)");
 
-      console.log("Refreshing questions list...");
       await fetchAllQuestions();
-      console.log("✅ Questions refreshed successfully!");
 
-      // Auto-scroll to bottom to show the updated question/answer
       setTimeout(() => {
         try {
           flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -503,11 +616,10 @@ export default function ClassroomScreen({ route }) {
         }
       }, 300);
     } catch (error) {
-      console.error("Error submitting answer:", error);
       showToast(
         "error",
         "Failed to submit answer",
-        error.message || "Unknown error"
+        error?.message || "Unknown error"
       );
     }
   };
@@ -519,7 +631,6 @@ export default function ClassroomScreen({ route }) {
     answeredBy
   ) => {
     try {
-      // Update question with rating
       const questionRef = doc(db, "questions", questionId);
       const questionDoc = await getDoc(questionRef);
       if (questionDoc.exists()) {
@@ -527,77 +638,60 @@ export default function ClassroomScreen({ route }) {
         const updatedAnswers = [...questionData.answers];
         updatedAnswers[answerIndex] = {
           ...updatedAnswers[answerIndex],
-          rating: rating,
+          rating,
           ratedBy: auth.currentUser.uid,
         };
 
-        await updateDoc(questionRef, {
-          answers: updatedAnswers,
-        });
+        await updateDoc(questionRef, { answers: updatedAnswers });
 
-        // Update user points
+        // Update user points of answerer
         const userRef = doc(db, "users", answeredBy);
         const userDoc = await getDoc(userRef);
         if (userDoc.exists()) {
           const userData = userDoc.data();
           const currentPoints = userData.points || 0;
           const newPoints = currentPoints + rating;
+          await updateDoc(userRef, { points: newPoints });
 
-          await updateDoc(userRef, {
-            points: newPoints,
-          });
-
-          // Check if user should be promoted to tutor
           if (newPoints >= 200 && userData.role === "student") {
-            await updateDoc(userRef, {
-              role: "tutor",
-            });
+            await updateDoc(userRef, { role: "tutor" });
           }
         }
 
         showToast(
           "success",
-          `Rated ${rating} points!`,
+          `Rated ⭐${rating}`,
           `Points added to ${updatedAnswers[answerIndex].answeredByName}`
         );
         await fetchAllQuestions();
       }
     } catch (error) {
-      showToast("error", "Failed to rate answer", error.message);
+      showToast("error", "Failed to rate answer", error?.message || "");
     }
   };
 
   const handleDeleteQuestion = async (questionId, questionText) => {
     Alert.alert(
       "Delete Question",
-      `Are you sure you want to delete this question?\n\n"${questionText.slice(
-        0,
-        100
-      )}${questionText.length > 100 ? "..." : ""}"`,
+      `Are you sure you want to delete this question?\n\n"${(
+        questionText || ""
+      ).slice(0, 100)}${(questionText || "").length > 100 ? "..." : ""}"`,
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
+        { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
             try {
-              console.log("Deleting question:", questionId);
-
-              // Delete the question document from Firestore
               await deleteDoc(doc(db, "questions", questionId));
-
-              showToast("success", "Question deleted successfully");
-
-              // Refresh the questions list
+              showToast("success", "Question deleted");
               await fetchAllQuestions();
-
-              console.log("✅ Question deleted and list refreshed");
             } catch (error) {
-              console.error("Error deleting question:", error);
-              showToast("error", "Failed to delete question", error.message);
+              showToast(
+                "error",
+                "Failed to delete question",
+                error?.message || ""
+              );
             }
           },
         },
@@ -636,6 +730,24 @@ export default function ClassroomScreen({ route }) {
                 accessibilityLabel={`Select ${subject} for posting`}
                 accessibilityState={{ selected: active }}
               >
+                <Ionicons
+                  name={
+                    subject === "Mathematics"
+                      ? "calculator-outline"
+                      : subject === "Science"
+                      ? "flask-outline"
+                      : subject === "English"
+                      ? "book-outline"
+                      : subject === "History"
+                      ? "time-outline"
+                      : subject === "Geography"
+                      ? "earth-outline"
+                      : "ellipse-outline"
+                  }
+                  size={14}
+                  color={active ? Buttons.chipActiveText : EDU_COLORS.gray600}
+                  style={{ marginRight: 6 }}
+                />
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
                   numberOfLines={1}
@@ -651,7 +763,12 @@ export default function ClassroomScreen({ route }) {
 
   const Empty = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyStateText}>💬 No questions yet</Text>
+      <MaterialCommunityIcons
+        name="chat-question"
+        size={28}
+        color={EDU_COLORS.primary}
+      />
+      <Text style={styles.emptyStateText}>No questions yet</Text>
       <Text style={styles.emptyStateSubtext}>
         Be the first to ask a question!
       </Text>
@@ -661,120 +778,34 @@ export default function ClassroomScreen({ route }) {
           title="Ask a Question"
           onPress={() => setShowQuestionForm(true)}
           style={styles.ctaAsk}
+          left={<Ionicons name="create-outline" size={18} color="#fff" />}
         />
       )}
     </View>
   );
 
-  const renderBubble = (q) => {
-    const isMine = q.askedBy === auth.currentUser?.uid;
+  const renderItem = ({ item, index }) => {
+    const isMine = item.askedBy === auth.currentUser?.uid;
     return (
-      <View
-        style={[
-          styles.chatContainer,
-          isMine ? styles.myQuestionContainer : styles.othersQuestionContainer,
-        ]}
-      >
-        {!isMine && (
-          <Text style={styles.chatNameLabel}>
-            {q.askedByName || "Anonymous"}
-          </Text>
-        )}
-
-        <BlurCard style={[styles.chatBubble]}>
-          <Pressable
-            onPress={() =>
-              setExpandedQuestion(expandedQuestion === q.id ? null : q.id)
-            }
-            onLongPress={
-              isMine
-                ? () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    handleDeleteQuestion(q.id, q.question);
-                  }
-                : undefined
-            }
-            accessibilityRole="button"
-          >
-            {q.image ? (
-              <Pressable
-                onPress={() => {
-                  setModalImage(q.image);
-                  setShowImageModal(true);
-                }}
-                accessibilityRole="imagebutton"
-              >
-                <Image source={{ uri: q.image }} style={styles.questionImage} />
-              </Pressable>
-            ) : null}
-
-            {!!q.title && (
-              <Text
-                style={[styles.chatTitleText, styles.textStrong]}
-                numberOfLines={2}
-              >
-                {q.title}
-              </Text>
-            )}
-
-            <Text style={styles.chatQuestionText}>{q.question}</Text>
-
-            {q.subject && (
-              <View
-                style={[
-                  styles.subjectPill,
-                  isMine ? styles.mySubjectPill : styles.othersSubjectPill,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.subjectPillText,
-                    isMine
-                      ? styles.mySubjectPillText
-                      : styles.othersSubjectPillText,
-                  ]}
-                >
-                  {q.subject}
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.chatMetaRow}>
-              <Text style={styles.chatMeta}>
-                {q.status} • 💬 {q.answers?.length || 0}
-                {isMine && (
-                  <Text style={styles.longPressHint}> • Hold to delete</Text>
-                )}
-              </Text>
-              {!isMine && (
-                <GradientButton
-                  title="Answer"
-                  onPress={(e) => {
-                    e?.stopPropagation?.();
-                    setSelectedQuestionItem(q);
-                    setShowAnswerForm(true);
-                  }}
-                  style={styles.answerBtn}
-                  textStyle={styles.answerBtnLabel}
-                />
-              )}
-            </View>
-          </Pressable>
-
-          {expandedQuestion === q.id && q.answers?.length > 0 && (
-            <View style={styles.chatAnswersSection}>
-              {q.answers.map((ans, i) => (
-                <View key={i} style={styles.chatAnswerCard}>
-                  <Text style={styles.chatAnswerText}>{ans.answer}</Text>
-                  <Text style={styles.chatAnswerMeta}>
-                    By {ans.answeredByName}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </BlurCard>
-      </View>
+      <QuestionBubble
+        q={item}
+        index={index}
+        isMine={isMine}
+        expanded={expandedQuestion === item.id}
+        onToggleExpand={(id, openImage) => {
+          if (openImage && item.image) {
+            setModalImage(item.image);
+            setShowImageModal(true);
+            return;
+          }
+          setExpandedQuestion((prev) => (prev === id ? null : id));
+        }}
+        onDelete={handleDeleteQuestion}
+        onAnswerPress={(q) => {
+          setSelectedQuestionItem(q);
+          setShowAnswerForm(true);
+        }}
+      />
     );
   };
 
@@ -783,7 +814,7 @@ export default function ClassroomScreen({ route }) {
       ref={flatListRef}
       data={questions}
       keyExtractor={(item) => item.id}
-      inverted={true}
+      inverted
       contentContainerStyle={
         questions.length === 0
           ? { flex: 1, paddingHorizontal: 16 }
@@ -796,7 +827,6 @@ export default function ClassroomScreen({ route }) {
       ListEmptyComponent={<Empty />}
       showsVerticalScrollIndicator={false}
       bounces={false}
-      overScrollMode="never"
       maintainVisibleContentPosition={{
         minIndexForVisible: 0,
         autoscrollToTopThreshold: 10,
@@ -809,7 +839,7 @@ export default function ClassroomScreen({ route }) {
           onRefresh={refreshQuestions}
         />
       }
-      renderItem={({ item }) => renderBubble(item)}
+      renderItem={renderItem}
     />
   );
 
@@ -822,30 +852,109 @@ export default function ClassroomScreen({ route }) {
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.sectionTitle}>Child’s Progress</Text>
-      <BlurCard style={styles.childCard}>
-        <Text style={styles.childName}>👤 Child: John Doe</Text>
-        <Text style={styles.childGrade}>📚 Grade: {userGrade || "N/A"}</Text>
-        <Text style={styles.childPoints}>🏆 Points: 150</Text>
-        <Text style={styles.childRank}>🥇 Class Rank: #12</Text>
+      <BlurCard style={styles.tileCard}>
+        <View style={styles.tileRow}>
+          <View style={styles.tileIconCircle}>
+            <Ionicons
+              name="person-circle-outline"
+              size={22}
+              color={EDU_COLORS.primary}
+            />
+          </View>
+          <View style={styles.tileContent}>
+            <Text style={styles.tileTitle}>Child</Text>
+            <Text style={styles.tileValue}>John Doe</Text>
+          </View>
+        </View>
+        <View style={styles.tileDivider} />
+        <View style={styles.tileRow}>
+          <View style={styles.tileIconCircle}>
+            <Ionicons
+              name="school-outline"
+              size={20}
+              color={EDU_COLORS.primary}
+            />
+          </View>
+          <View style={styles.tileContent}>
+            <Text style={styles.tileTitle}>Grade</Text>
+            <Text style={styles.tileValue}>{userGrade || "N/A"}</Text>
+          </View>
+        </View>
+        <View style={styles.tileDivider} />
+        <View style={styles.tileRow}>
+          <View style={styles.tileIconCircle}>
+            <Ionicons
+              name="trophy-outline"
+              size={20}
+              color={EDU_COLORS.primary}
+            />
+          </View>
+          <View style={styles.tileContent}>
+            <Text style={styles.tileTitle}>Points</Text>
+            <Text style={styles.tileValue}>150</Text>
+          </View>
+        </View>
+        <View style={styles.tileDivider} />
+        <View style={styles.tileRow}>
+          <View style={styles.tileIconCircle}>
+            <Ionicons
+              name="podium-outline"
+              size={20}
+              color={EDU_COLORS.primary}
+            />
+          </View>
+          <View style={styles.tileContent}>
+            <Text style={styles.tileTitle}>Class Rank</Text>
+            <Text style={styles.tileValue}>#12</Text>
+          </View>
+        </View>
       </BlurCard>
 
       <Text style={[styles.sectionTitle, { marginTop: 10 }]}>
         Recent Activity
       </Text>
-      <BlurCard style={styles.activityCard}>
-        <Text style={styles.activityText}>✅ Answered 3 questions today</Text>
-        <Text style={styles.activityText}>📖 Downloaded Math notes</Text>
-        <Text style={styles.activityText}>🏆 Earned “Helper” badge</Text>
+      <BlurCard style={styles.tileListCard}>
+        {[
+          {
+            icon: "checkmark-done-outline",
+            text: "Answered 3 questions today",
+          },
+          { icon: "download-outline", text: "Downloaded Math notes" },
+          { icon: "star-outline", text: "Earned “Helper” badge" },
+        ].map((it, idx) => (
+          <View
+            key={it.text}
+            style={[styles.tileListRow, idx !== 0 && styles.tileListRowBorder]}
+          >
+            <Ionicons name={it.icon} size={18} color={EDU_COLORS.primary} />
+            <Text style={styles.activityText}>{it.text}</Text>
+          </View>
+        ))}
       </BlurCard>
 
       <Text style={[styles.sectionTitle, { marginTop: 10 }]}>
         Weekly Digest
       </Text>
-      <BlurCard style={styles.digestCard}>
-        <Text style={styles.digestText}>📊 Questions Asked: 5</Text>
-        <Text style={styles.digestText}>💡 Questions Answered: 12</Text>
-        <Text style={styles.digestText}>⭐ Points Earned: 45</Text>
-        <Text style={styles.digestText}>📈 Improvement: +15%</Text>
+      <BlurCard style={styles.digestRow}>
+        <View style={styles.digestItem}>
+          <Text style={styles.digestValue}>5</Text>
+          <Text style={styles.digestLabel}>Asked</Text>
+        </View>
+        <View style={styles.digestDivider} />
+        <View style={styles.digestItem}>
+          <Text style={styles.digestValue}>12</Text>
+          <Text style={styles.digestLabel}>Answered</Text>
+        </View>
+        <View style={styles.digestDivider} />
+        <View style={styles.digestItem}>
+          <Text style={styles.digestValue}>45</Text>
+          <Text style={styles.digestLabel}>Points</Text>
+        </View>
+        <View style={styles.digestDivider} />
+        <View style={styles.digestItem}>
+          <Text style={styles.digestValue}>+15%</Text>
+          <Text style={styles.digestLabel}>Growth</Text>
+        </View>
       </BlurCard>
     </ScrollView>
   );
@@ -855,16 +964,7 @@ export default function ClassroomScreen({ route }) {
       return (
         <View style={styles.loaderWrap}>
           <ActivityIndicator animating color={EDU_COLORS.primary} />
-          <Text
-            style={{
-              fontSize: 20,
-              color: "white",
-              fontWeight: "600",
-              textAlign: "center",
-            }}
-          >
-            Loading Your Classroom …
-          </Text>
+          <Text style={styles.loaderText}>Loading Your Classroom …</Text>
         </View>
       );
     }
@@ -881,35 +981,34 @@ export default function ClassroomScreen({ route }) {
   };
 
   /* ---------- Draggable FAB ---------- */
-  const pan = useRef(new Animated.ValueXY()).current;
-  const isDragging = useRef(false);
   const panResponder = useRef(
-    Animated.createAnimatedComponent(View) &&
-      require("react-native").PanResponder.create({
-        onMoveShouldSetPanResponder: (_evt, g) =>
-          Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
-        onPanResponderGrant: () => {
-          isDragging.current = true;
-          pan.setOffset({ x: pan.x.__getValue(), y: pan.y.__getValue() });
-        },
-        onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, g) =>
+        Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+      onPanResponderGrant: () => {
+        isDragging.current = true;
+        pan.setOffset({ x: pan.x.__getValue(), y: pan.y.__getValue() });
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+        setTimeout(() => (isDragging.current = false), 60);
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          bounciness: 6,
           useNativeDriver: false,
-        }),
-        onPanResponderRelease: () => {
-          pan.flattenOffset();
-          setTimeout(() => (isDragging.current = false), 60);
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            bounciness: 6,
-            useNativeDriver: false,
-          }).start();
-        },
-      })
+        }).start();
+      },
+    })
   ).current;
 
   const handleFabPress = () => {
     if (!isDragging.current) setShowMyQuestions(true);
   };
+
+  const negativeKeyboardOffset = Animated.multiply(keyboardOffset, -1);
 
   /* ---------- UI ---------- */
   return (
@@ -919,7 +1018,7 @@ export default function ClassroomScreen({ route }) {
         {renderContent()}
 
         <View>
-          {/* Subject rail - moved above chatbox */}
+          {/* Subject rail */}
           {userRole && <SubjectRail />}
 
           {/* Subject Selection Bar */}
@@ -927,6 +1026,12 @@ export default function ClassroomScreen({ route }) {
             selectedSubject && (
               <View style={styles.subjectSelectionBar}>
                 <View style={styles.subjectTag}>
+                  <Ionicons
+                    name="pricetag-outline"
+                    size={14}
+                    color="#fff"
+                    style={{ marginRight: 6 }}
+                  />
                   <Text style={styles.subjectTagText}>{selectedSubject}</Text>
                   <Pressable
                     style={styles.subjectTagClose}
@@ -938,21 +1043,25 @@ export default function ClassroomScreen({ route }) {
               </View>
             )}
 
-          {/* Main Input Bar */}
-          <View
+          {/* Main Input Bar (animated with keyboard) */}
+          <Animated.View
             style={[
               styles.inputBar,
               { paddingBottom: Math.max(insets.bottom, 8) },
+              { transform: [{ translateY: negativeKeyboardOffset }] },
             ]}
           >
             <View style={styles.chatInputContainer}>
               {/* Attachment Button */}
               <Pressable
                 style={styles.imageButton}
-                onPress={pickImage}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  pickImage();
+                }}
                 accessibilityRole="button"
               >
-                <Text style={styles.imageButtonText}>+</Text>
+                <Ionicons name="add-outline" size={22} color="#fff" />
               </Pressable>
 
               {/* Text Input */}
@@ -965,7 +1074,7 @@ export default function ClassroomScreen({ route }) {
                       ...INPUT_THEME.colors,
                       background: "transparent",
                       primary: EDU_COLORS.primary,
-                      text: "#000000",
+                      text: EDU_COLORS.textPrimary,
                       placeholder: EDU_COLORS.gray500,
                     },
                   }}
@@ -975,12 +1084,12 @@ export default function ClassroomScreen({ route }) {
                   value={question}
                   onChangeText={setQuestion}
                   multiline
-                  numberOfLines={1} // Start with single line
+                  numberOfLines={1}
                   maxLength={500}
                   underlineColor="transparent"
                   activeUnderlineColor="transparent"
                   placeholderTextColor={EDU_COLORS.gray500}
-                  autoCorrect={true}
+                  autoCorrect
                   autoCapitalize="sentences"
                 />
               </View>
@@ -993,10 +1102,17 @@ export default function ClassroomScreen({ route }) {
                     ? styles.sendButtonActive
                     : styles.sendButtonInactive,
                 ]}
-                onPress={postQuestion}
+                onPress={() => {
+                  if (question.trim() && selectedSubject) {
+                    Haptics.notificationAsync(
+                      Haptics.NotificationFeedbackType.Success
+                    );
+                  }
+                  postQuestion();
+                }}
                 accessibilityRole="button"
               >
-                <Text style={styles.sendButtonText}>↑</Text>
+                <Ionicons name="arrow-up" size={18} color="#fff" />
               </Pressable>
             </View>
 
@@ -1016,7 +1132,7 @@ export default function ClassroomScreen({ route }) {
                 {question.length}/500
               </Text>
             )}
-          </View>
+          </Animated.View>
 
           {/* Image Preview */}
           {selectedImage && (
@@ -1029,7 +1145,7 @@ export default function ClassroomScreen({ route }) {
                 style={styles.removeImageBtn}
                 onPress={() => setSelectedImage(null)}
               >
-                <Text style={styles.removeImageText}>×</Text>
+                <Ionicons name="close" size={16} color="#fff" />
               </Pressable>
             </View>
           )}
@@ -1054,7 +1170,7 @@ export default function ClassroomScreen({ route }) {
             onPress={handleFabPress}
             accessibilityRole="button"
           >
-            <Text style={styles.fabText}>📋</Text>
+            <Ionicons name="documents-outline" size={24} color="#fff" />
           </Pressable>
         </Animated.View>
 
@@ -1072,7 +1188,7 @@ export default function ClassroomScreen({ route }) {
             <Animated.View
               style={[
                 styles.centeredCard,
-                { transform: [{ translateY: modalAnim }] },
+                { transform: [{ translateY: modalAnimAsk }] },
               ]}
             >
               <View style={styles.modalHeader}>
@@ -1081,7 +1197,7 @@ export default function ClassroomScreen({ route }) {
                   style={styles.closeButton}
                   onPress={() => setShowQuestionForm(false)}
                 >
-                  <Text style={styles.closeButtonText}>×</Text>
+                  <Ionicons name="close" size={18} color={EDU_COLORS.gray700} />
                 </Pressable>
               </View>
 
@@ -1147,6 +1263,9 @@ export default function ClassroomScreen({ route }) {
                     title="Ask Question"
                     onPress={postQuestion}
                     style={styles.askButton}
+                    left={
+                      <Ionicons name="send-outline" size={16} color="#fff" />
+                    }
                   />
                   <Pressable
                     onPress={() =>
@@ -1175,21 +1294,26 @@ export default function ClassroomScreen({ route }) {
         {/* Answer Modal */}
         <Modal
           visible={showAnswerForm}
-          animationType="fade"
+          animationType="none"
           transparent
           statusBarTranslucent
           presentationStyle="overFullScreen"
           onRequestClose={() => setShowAnswerForm(false)}
         >
           <View style={styles.centeredOverlay}>
-            <View style={styles.centeredCard}>
+            <Animated.View
+              style={[
+                styles.centeredCard,
+                { transform: [{ translateY: modalAnimAnswer }] },
+              ]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Answer Question</Text>
                 <Pressable
                   style={styles.closeButton}
                   onPress={() => setShowAnswerForm(false)}
                 >
-                  <Text style={styles.closeButtonText}>×</Text>
+                  <Ionicons name="close" size={18} color={EDU_COLORS.gray700} />
                 </Pressable>
               </View>
 
@@ -1224,6 +1348,13 @@ export default function ClassroomScreen({ route }) {
                     title="Submit"
                     onPress={submitAnswer}
                     style={styles.submitButton}
+                    left={
+                      <MaterialCommunityIcons
+                        name="check-bold"
+                        size={16}
+                        color="#fff"
+                      />
+                    }
                   />
                   <Pressable
                     onPress={() => setShowAnswerForm(false)}
@@ -1243,21 +1374,26 @@ export default function ClassroomScreen({ route }) {
                   </Pressable>
                 </View>
               </ScrollView>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
 
-        {/* My Questions Modal */}
+        {/* My Questions / History Modal */}
         <Modal
           visible={showMyQuestions}
-          animationType="fade"
+          animationType="none"
           transparent
           statusBarTranslucent
           presentationStyle="overFullScreen"
           onRequestClose={() => setShowMyQuestions(false)}
         >
           <View style={styles.centeredOverlay}>
-            <View style={styles.centeredCard}>
+            <Animated.View
+              style={[
+                styles.centeredCard,
+                { transform: [{ translateY: modalAnimHistory }] },
+              ]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>
                   {userRole === "teacher"
@@ -1268,7 +1404,7 @@ export default function ClassroomScreen({ route }) {
                   style={styles.closeButton}
                   onPress={() => setShowMyQuestions(false)}
                 >
-                  <Text style={styles.closeButtonText}>×</Text>
+                  <Ionicons name="close" size={18} color={EDU_COLORS.gray700} />
                 </Pressable>
               </View>
 
@@ -1290,8 +1426,8 @@ export default function ClassroomScreen({ route }) {
                     <BlurCard key={q.id} style={styles.questionCard}>
                       <Pressable
                         onPress={() =>
-                          setExpandedQuestion(
-                            expandedQuestion === q.id ? null : q.id
+                          setExpandedQuestion((prev) =>
+                            prev === q.id ? null : q.id
                           )
                         }
                       >
@@ -1301,6 +1437,7 @@ export default function ClassroomScreen({ route }) {
                               setModalImage(q.image);
                               setShowImageModal(true);
                             }}
+                            style={{ marginBottom: 8 }}
                           >
                             <Image
                               source={{ uri: q.image }}
@@ -1311,10 +1448,20 @@ export default function ClassroomScreen({ route }) {
                         {!!q.title && (
                           <Text style={styles.questionTitle}>{q.title}</Text>
                         )}
-                        <Text style={styles.questionText}>{q.question}</Text>
-                        <Text style={styles.readOnlyText}>
-                          Status: {q.status} • 💬 {q.answers?.length || 0}
-                        </Text>
+                        {!!q.question && (
+                          <Text style={styles.questionText}>{q.question}</Text>
+                        )}
+                        <View style={styles.questionMetaRow}>
+                          <Text style={styles.readOnlyText}>
+                            Status: {q.status} •{" "}
+                            <Ionicons
+                              name="chatbubble-outline"
+                              size={12}
+                              color={EDU_COLORS.gray600}
+                            />{" "}
+                            {q.answers?.length || 0}
+                          </Text>
+                        </View>
                       </Pressable>
 
                       {expandedQuestion === q.id && q.answers?.length > 0 && (
@@ -1365,7 +1512,7 @@ export default function ClassroomScreen({ route }) {
                     </BlurCard>
                   ))}
               </ScrollView>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
 
@@ -1385,7 +1532,7 @@ export default function ClassroomScreen({ route }) {
               ]}
               onPress={() => setShowImageModal(false)}
             >
-              <Text style={styles.imageModalCloseText}>×</Text>
+              <Ionicons name="close" size={22} color="#fff" />
             </Pressable>
 
             {modalImage && (
@@ -1411,7 +1558,7 @@ export default function ClassroomScreen({ route }) {
   );
 }
 
-/* ===================== Styles ===================== */
+/* ===================== Styles (compact card design) ===================== */
 const styles = StyleSheet.create({
   content: { flex: 1 },
 
@@ -1422,25 +1569,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 12,
   },
+  loaderText: {
+    fontSize: 18,
+    color: EDU_COLORS.textPrimary,
+    fontWeight: "700",
+  },
 
-  /* ---------- Blur Card (shared) ---------- */
+  /* ---------- Blur Card ---------- */
   blurCard: {
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Surfaces.border,
     padding: 12,
     overflow: "hidden",
+    ...shadow(8),
   },
 
-  /* ---------- Subject Chips Rail ---------- */
-  chipsRow: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
-    gap: 8,
-  },
+  /* ---------- Chips ---------- */
+  chipsRow: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6, gap: 8 },
   chip: {
-    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 18,
     borderWidth: 1,
@@ -1451,17 +1601,11 @@ const styles = StyleSheet.create({
     backgroundColor: Buttons.chipActiveBg,
     borderColor: EDU_COLORS.accent,
   },
-  chipPressed: { opacity: 0.9 },
-  chipText: {
-    fontSize: 13,
-    color: EDU_COLORS.textPrimary,
-    fontWeight: "600",
-  },
-  chipTextActive: {
-    color: Buttons.chipActiveText,
-  },
+  chipPressed: { opacity: 0.92 },
+  chipText: { fontSize: 13, color: EDU_COLORS.textPrimary, fontWeight: "600" },
+  chipTextActive: { color: Buttons.chipActiveText },
 
-  /* ---------- Empty State ---------- */
+  /* ---------- Empty ---------- */
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -1470,31 +1614,21 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   emptyStateText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     color: EDU_COLORS.textPrimary,
   },
   emptyStateSubtext: {
     fontSize: 14,
     color: EDU_COLORS.gray600,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  ctaAsk: {
-    marginTop: 8,
-    borderRadius: 12,
-  },
+  ctaAsk: { marginTop: 4, borderRadius: 12 },
 
-  /* ---------- Chat List & Bubbles ---------- */
-  chatContainer: {
-    width: "100%",
-    marginBottom: 12,
-  },
-  myQuestionContainer: {
-    alignItems: "flex-end",
-  },
-  othersQuestionContainer: {
-    alignItems: "flex-start",
-  },
+  /* ---------- Chat ---------- */
+  chatContainer: { width: "100%", marginBottom: 12 },
+  myQuestionContainer: { alignItems: "flex-end" },
+  othersQuestionContainer: { alignItems: "flex-start" },
 
   chatNameLabel: {
     fontSize: 12,
@@ -1502,19 +1636,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     marginLeft: 6,
   },
-
-  chatBubble: {
-    maxWidth: "90%",
-    padding: 12,
-  },
-
+  chatBubble: { maxWidth: "90%", padding: 12 },
   chatTitleText: {
     fontSize: 15,
     color: EDU_COLORS.textPrimary,
     marginBottom: 6,
   },
   textStrong: { fontWeight: "800" },
-
   chatQuestionText: {
     fontSize: 15,
     lineHeight: 20,
@@ -1525,9 +1653,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginTop: 10,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   mySubjectPill: {
     backgroundColor: Buttons.subtleBg,
@@ -1547,10 +1677,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  chatMeta: {
-    fontSize: 12,
-    color: EDU_COLORS.gray600,
-  },
+  chatMeta: { fontSize: 12, color: EDU_COLORS.gray600 },
   longPressHint: { color: EDU_COLORS.gray500 },
 
   answerBtn: {
@@ -1563,6 +1690,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 12,
+    marginLeft: 6,
   },
 
   chatAnswersSection: {
@@ -1590,7 +1718,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 
-  /* ---------- Subject Selection Bar (Tag) ---------- */
+  /* ---------- Subject Selection Bar ---------- */
   subjectSelectionBar: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -1606,11 +1734,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
-  subjectTagText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
+  subjectTagText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
   subjectTagClose: {
     marginLeft: 8,
     width: 18,
@@ -1627,20 +1751,19 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  /* ---------- Composer / Input Bar ---------- */
+  /* ---------- Composer ---------- */
   inputBar: {
     width: "100%",
     borderTopWidth: 1,
     borderTopColor: EDU_COLORS.borderLight,
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
   },
   chatInputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
     marginBottom: 8,
   },
-
   imageButton: {
     width: 44,
     height: 44,
@@ -1650,14 +1773,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
     marginBottom: 2,
+    ...shadow(6),
   },
-  imageButtonText: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "700",
-    lineHeight: 24,
-  },
-
   textInputContainer: {
     flex: 1,
     maxHeight: 150,
@@ -1677,12 +1794,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  inputContent: {
-    paddingTop: 0,
-    paddingBottom: 0,
-    margin: 0,
-  },
-
+  inputContent: { paddingTop: 0, paddingBottom: 0, margin: 0 },
   sendButton: {
     width: 44,
     height: 44,
@@ -1691,26 +1803,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 2,
-    ...paperTheme.shadows.light,
+    ...shadow(8),
   },
   sendButtonActive: { backgroundColor: EDU_COLORS.primary },
   sendButtonInactive: { backgroundColor: EDU_COLORS.gray200 },
-  sendButtonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "800",
-    lineHeight: 20,
-  },
-
   characterCount: {
     alignSelf: "flex-end",
     fontSize: 12,
     marginTop: -2,
-    marginBottom: 8,
+    marginBottom: 6,
     marginRight: 10,
   },
 
-  /* ---------- Image Preview (composer) ---------- */
+  /* ---------- Image Preview ---------- */
   imagePreview: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1723,11 +1828,7 @@ const styles = StyleSheet.create({
     borderColor: EDU_COLORS.gray200,
     gap: 12,
   },
-  previewImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
-  },
+  previewImage: { width: 64, height: 64, borderRadius: 8 },
   removeImageBtn: {
     position: "absolute",
     top: 6,
@@ -1739,14 +1840,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  removeImageText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    lineHeight: 18,
-    fontWeight: "800",
-  },
 
-  /* ---------- Draggable FAB ---------- */
+  /* ---------- FAB ---------- */
   fab: {
     position: "absolute",
     right: 20,
@@ -1754,12 +1849,11 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: EDU_COLORS.primary,
-    ...paperTheme.shadows.medium,
+    ...shadow(10),
   },
   fabPressable: { flex: 1, justifyContent: "center", alignItems: "center" },
-  fabText: { fontSize: 24, lineHeight: 26, color: "#FFFFFF" },
 
-  /* ---------- Modals Base ---------- */
+  /* ---------- Modals ---------- */
   centeredOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -1773,7 +1867,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingHorizontal: 0,
     paddingVertical: 0,
-    ...paperTheme.shadows.medium,
+    ...shadow(12),
   },
   modalHeader: {
     flexDirection: "row",
@@ -1796,7 +1890,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: EDU_COLORS.gray100,
   },
-  closeButtonText: { color: EDU_COLORS.gray700, fontSize: 22, lineHeight: 24 },
   modalBody: { paddingHorizontal: 16, paddingTop: 16 },
 
   /* ---------- Ask Modal ---------- */
@@ -1882,16 +1975,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: EDU_COLORS.gray200,
   },
-  questionImage: {
-    width: "100%",
-    height: 160,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
+  questionImage: { width: "100%", height: 160, borderRadius: 10 },
   questionTitle: {
     fontSize: 16,
     fontWeight: "800",
     color: EDU_COLORS.textPrimary,
+    marginTop: 8,
     marginBottom: 4,
   },
   questionText: {
@@ -1930,10 +2019,14 @@ const styles = StyleSheet.create({
     borderLeftColor: EDU_COLORS.secondary,
   },
   answerText: { fontSize: 14, color: EDU_COLORS.textPrimary, marginBottom: 6 },
-  answerMetaRow: { flexDirection: "row", justifyContent: "space-between" },
+  answerMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   answerMeta: { fontSize: 12, color: EDU_COLORS.gray600, fontStyle: "italic" },
   ratedText: { fontSize: 13, fontWeight: "800", color: EDU_COLORS.accent700 },
-  ratingButtons: { flexDirection: "row", gap: 6 },
+  ratingButtons: { flexDirection: "row", gap: 6, alignItems: "center" },
   ratingBtn: {
     paddingVertical: 4,
     paddingHorizontal: 8,
@@ -1942,7 +2035,78 @@ const styles = StyleSheet.create({
   },
   ratingText: { fontSize: 12, color: "#FFFFFF", fontWeight: "800" },
 
-  /* ---------- Fullscreen Image ---------- */
+  /* ---------- Parent Tiles ---------- */
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  tileCard: { marginHorizontal: 16, padding: 12 },
+  tileRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
+  tileIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: EDU_COLORS.gray100,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  tileContent: { flex: 1 },
+  tileTitle: {
+    fontSize: 12,
+    color: EDU_COLORS.gray600,
+    marginBottom: 2,
+    fontWeight: "700",
+  },
+  tileValue: {
+    fontSize: 14.5,
+    color: EDU_COLORS.textPrimary,
+    fontWeight: "800",
+  },
+  tileDivider: {
+    height: 1,
+    backgroundColor: EDU_COLORS.gray100,
+    marginVertical: 6,
+  },
+
+  tileListCard: { marginHorizontal: 16, padding: 8 },
+  tileListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+  },
+  tileListRowBorder: { borderTopWidth: 1, borderTopColor: EDU_COLORS.gray100 },
+  activityText: {
+    marginLeft: 8,
+    color: EDU_COLORS.textPrimary,
+    fontWeight: "600",
+  },
+
+  digestRow: {
+    marginHorizontal: 16,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "stretch",
+    justifyContent: "space-between",
+  },
+  digestItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  digestValue: {
+    fontSize: 16,
+    color: EDU_COLORS.textPrimary,
+    fontWeight: "800",
+  },
+  digestLabel: { fontSize: 11.5, color: EDU_COLORS.gray600, marginTop: 2 },
+  digestDivider: {
+    width: 1,
+    backgroundColor: EDU_COLORS.gray100,
+    marginVertical: 4,
+  },
+
+  /* ---------- Image modal ---------- */
   imageModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.9)",
@@ -1960,6 +2124,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  imageModalCloseText: { color: "#FFFFFF", fontSize: 24, lineHeight: 24 },
   fullscreenImage: { width: "100%", height: "100%" },
+
+  /* ---------- Buttons ---------- */
+  gradientBtn: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12 },
+  gradientBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  gradientBtnText: { color: "#fff", fontWeight: "800" },
 });
+
+/* ---------- Shadow helper ---------- */
+function shadow(elevation = 6) {
+  return {
+    elevation,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: Math.max(1, elevation / 2),
+    shadowOffset: { width: 0, height: Math.min(12, Math.ceil(elevation / 2)) },
+  };
+}

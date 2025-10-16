@@ -12,6 +12,7 @@ import {
   Dimensions,
   Animated,
   StatusBar,
+  Easing,
 } from "react-native";
 import {
   SafeAreaView,
@@ -75,16 +76,70 @@ const Card = memo(({ style, children }) => (
   <View style={[styles.card, style]}>{children}</View>
 ));
 
-// Little tiles like your screenshot (“Performance Insights” look)
-const InsightTile = ({ icon, color, title, subtitle }) => {
+const LoadingCard = ({
+  title = "Loading Q&A",
+  subtitle = "Fetching the latest unanswered questions…",
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = React.useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+        easing: Easing.inOut(Easing.cubic),
+      })
+    );
+    loop.start();
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
+  }, [anim]);
+
+  const translateX =
+    trackW > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-80, Math.max(trackW - 80, 0)],
+        })
+      : 0;
+
+  return (
+    <View style={styles.loadingCenterWrap}>
+      <View style={styles.tileCard}>
+        <Text style={styles.tileTitle}>⏳ {title}</Text>
+        <Text style={styles.tileSubtitle}>{subtitle}</Text>
+
+        <View
+          style={styles.progressTrack}
+          onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[
+              styles.progressBar,
+              trackW ? { transform: [{ translateX }] } : null,
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// Little tiles like your screenshot ("Performance Insights" look)
+const InsightTile = ({ icon, color, title, subtitle, delay = 0 }) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(anim, {
       toValue: 1,
-      duration: 360,
+      duration: 600,
+      delay: delay,
       useNativeDriver: true,
+      easing: Easing.out(Easing.cubic),
     }).start();
-  }, [anim]);
+  }, [anim, delay]);
   return (
     <Animated.View
       style={{
@@ -92,7 +147,7 @@ const InsightTile = ({ icon, color, title, subtitle }) => {
           {
             translateY: anim.interpolate({
               inputRange: [0, 1],
-              outputRange: [10, 0],
+              outputRange: [20, 0],
             }),
           },
         ],
@@ -362,27 +417,10 @@ export default function HomeScreen({ navigation }) {
   /* ---------- Loading ---------- */
   if (loading) {
     return (
-      <View style={styles.loadingFullscreenCenter}>
-        <View style={styles.loadingCard}>
-          <ActivityIndicator size="large" color={PRIMARY} />
-          <Text style={styles.loadingTitle}>Loading Dashboard …</Text>
-          <Text style={styles.loadingSubtitle}>
-            Fetching your classes, questions, and recent activity
-          </Text>
-
-          <View
-            style={styles.progressTrack}
-            onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
-          >
-            <Animated.View
-              style={[
-                styles.progressBarIndeterminate,
-                { transform: [{ translateX: barTranslate }] },
-              ]}
-            />
-          </View>
-        </View>
-      </View>
+      <LoadingCard
+        title="Loading questions"
+        subtitle="Personalizing by your role and grade…"
+      />
     );
   }
 
@@ -421,6 +459,7 @@ export default function HomeScreen({ navigation }) {
               icon={<Ionicons name="time-outline" size={20} color="#16A34A" />}
               title="Response Time"
               subtitle="Fast responder — typically replies within 30 minutes"
+              delay={0}
             />
             <View style={{ width: 12 }} />
             <InsightTile
@@ -434,6 +473,7 @@ export default function HomeScreen({ navigation }) {
               }
               title="Activity Level"
               subtitle="Moderate — based on your recent interactions"
+              delay={150}
             />
           </View>
 
@@ -704,6 +744,8 @@ export default function HomeScreen({ navigation }) {
 }
 
 /* ---------------- Styles ---------------- */
+const CARD_BG = Surfaces?.solid ?? "#FFFFFF";
+const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   scrollContent: { paddingBottom: 120 },
@@ -1096,12 +1138,72 @@ const styles = StyleSheet.create({
   emptySubtext: { color: SECONDARY_TEXT, fontSize: 14, textAlign: "center" },
 
   /* Loading */
+  loadingCenterWrap: {
+    flex: 1,
+    width: "100%",
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  tile: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2,
+    paddingVertical: 14,
+  },
+  px16: { paddingHorizontal: 16 },
+
+  tileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  tileTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+  },
+  tileSubtitle: {
+    fontSize: 13.5,
+    color: EDU_COLORS.textSecondary,
+    marginTop: 2,
+  },
+
   loadingFullscreenCenter: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
   },
+  tileCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
+  },
+
   loadingCard: {
     width: "100%",
     maxWidth: 520,

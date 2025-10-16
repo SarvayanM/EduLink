@@ -291,8 +291,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: Surfaces?.border ?? "rgba(148,163,184,0.24)",
   },
 
   left: {

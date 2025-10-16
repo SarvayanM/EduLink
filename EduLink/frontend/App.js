@@ -1,7 +1,7 @@
 // frontend/App.js
 import { useEffect, useState } from "react";
 import { ImageBackground } from "react-native";
-import bgImage from "./assets/app-bg20.jpeg";
+
 import LoadingPage from "./components/LoadingPage";
 
 import {
@@ -35,7 +35,7 @@ import {
 import Toast from "react-native-toast-message";
 import TopNavbar, { NAVBAR_HEIGHT } from "./components/TopNavbar";
 import BottomNavbar, { BOTTOM_NAV_HEIGHT } from "./components/BottomNavbar";
-
+import AcademicLoading from "./components/AcademicLoading";
 /* Screens */
 import HomeScreen from "./screens/HomeScreen";
 import LoginScreen from "./screens/LoginScreen";
@@ -325,9 +325,10 @@ function RootApp() {
       {isAuthRoute ? (
         // Full-screen gradient for Login/Register
         <LinearGradient
-          colors={[EDU_COLORS.primary, "#0D7377", "#04364A"]}
+          colors={APP_GRADIENT}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          end={{ x: 0, y: 1 }}
+          locations={[0, 0.17, 1]}
           style={StyleSheet.absoluteFill}
         />
       ) : (

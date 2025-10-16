@@ -1,5 +1,5 @@
-import Screen from "../components/Screen";
-import React, { useState, useEffect, useRef, useMemo } from "react";
+// screens/RegisterScreen.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -27,7 +27,6 @@ import {
   Snackbar,
   Provider as PaperProvider,
 } from "react-native-paper";
-
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { auth, db, getSecondaryAuth } from "../services/firebaseAuth";
@@ -48,48 +47,49 @@ import {
 } from "firebase/firestore";
 import { EDU_COLORS, paperTheme as baseTheme } from "../theme/colors";
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+/* ---------- Dimensions ---------- */
+const { width: screenWidth } = Dimensions.get("window");
 
-/* ---- Palette shortcuts ---- */
+/* ---------- Palette shortcuts ---------- */
 const C = {
   primary: EDU_COLORS.primary,
   secondary: EDU_COLORS.secondary,
   base: EDU_COLORS.base,
   white: "#FFFFFF",
   error: EDU_COLORS.error,
-  placeholder: "rgba(255,255,255,0.72)",
-  label: "rgba(255,255,255,0.82)",
+  placeholder: EDU_COLORS.textMuted,
+  label: EDU_COLORS.textSecondary,
 };
 
-/* ---- Paper theme (surfaces transparent so our glass cards pop) ---- */
+/* ---------- Paper theme (transparent to let white base show) ---------- */
 const paperTheme = {
   ...baseTheme,
   colors: {
     ...baseTheme.colors,
     background: "transparent",
     surface: "transparent",
-    text: C.white,
+    text: EDU_COLORS.textPrimary,
   },
 };
 
-/* ---- Unified input theme (placeholder-only) ---- */
+/* ---------- Input theme (no hard-coded colors) ---------- */
 const INPUT_THEME = {
   roundness: 16,
   colors: {
-    primary: C.white, // focus/outline
-    onSurfaceVariant: C.placeholder, // helper/guide tones
-    outline: "rgba(255,255,255,0.35)",
-    outlineVariant: "rgba(255,255,255,0.2)",
-    placeholder: C.placeholder,
-    text: C.white,
+    primary: C.primary,
+    onSurfaceVariant: EDU_COLORS.textMuted,
+    outline: EDU_COLORS.gray300,
+    outlineVariant: EDU_COLORS.gray200,
+    placeholder: EDU_COLORS.textMuted,
+    text: EDU_COLORS.textPrimary,
     background: "transparent",
     surface: "transparent",
   },
 };
 
 const ROLES = ["student", "teacher", "parent"];
-const GRADES_LIST = ["6", "7", "8", "9", "10", "11", "12", "13"];
-const GRADE_PLACEHOLDER = "Select grade (6–13)";
+const GRADES_LIST = ["6", "7", "8", "9", "10", "11"];
+const GRADE_PLACEHOLDER = "Select grade (6–11)";
 
 const sriLankaSchoolSubjects = [
   "Sinhala",
@@ -110,40 +110,28 @@ const sriLankaSchoolSubjects = [
   "Music",
   "Dance",
   "Drama and Theatre",
-  "Entrepreneurship and Financial Literacy",
-  "Accounting",
-  "Business Studies",
-  "Economics",
-  "Business Statistics",
-  "Political Science",
-  "Logic and Scientific Method",
-  "Mass Media and Communication Studies",
-  "Home Economics",
-  "Biology",
-  "Chemistry",
-  "Physics",
-  "Combined Mathematics",
 ];
 
 export default function RegisterScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const GRADES = useMemo(() => GRADES_LIST, []);
 
+  // Profile / role state
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("student");
   const [grade, setGrade] = useState("6");
   const [gradePickerOpen, setGradePickerOpen] = useState(false);
   const [gradeTouched, setGradeTouched] = useState(false);
 
-  // Subject picker
+  // Teacher subject picker
   const SUBJECT_PLACEHOLDER = "Select teaching subject";
   const [subject, setSubject] = useState("");
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
   const [subjectTouched, setSubjectTouched] = useState(false);
   const [subjectQuery, setSubjectQuery] = useState("");
 
-  // Email & passwords
-  const [email, setEmail] = useState("");
+  // Emails & passwords
+  const [email, setEmail] = useState(""); // Parent/Student/Teacher account email (main)
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [confirmTouched, setConfirmTouched] = useState(false);
@@ -164,7 +152,7 @@ export default function RegisterScreen({ route, navigation }) {
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("success");
 
-  // Animations (kept for polish)
+  // Animations
   const fade = useRef(new Animated.Value(0)).current;
   const slideY = useRef(new Animated.Value(30)).current;
   const cardScale = useRef(new Animated.Value(0.95)).current;
@@ -172,8 +160,11 @@ export default function RegisterScreen({ route, navigation }) {
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const logoRotate = useRef(new Animated.Value(0)).current;
 
+  // Animate profile image on change
+  const imgScale = useRef(new Animated.Value(0.9)).current;
+
   useEffect(() => {
-    // Logo entrance
+    // Header / card entrance
     Animated.parallel([
       Animated.spring(logoScale, {
         toValue: 1,
@@ -187,10 +178,6 @@ export default function RegisterScreen({ route, navigation }) {
         easing: Easing.elastic(1.1),
         useNativeDriver: true,
       }),
-    ]).start();
-
-    // Content entrance
-    Animated.parallel([
       Animated.timing(fade, {
         toValue: 1,
         duration: 800,
@@ -212,7 +199,7 @@ export default function RegisterScreen({ route, navigation }) {
     ]).start();
   }, [fade, slideY, cardScale, logoScale, logoRotate]);
 
-  // Image Picker permission
+  // Request gallery permission for picking avatar
   useEffect(() => {
     (async () => {
       const { status } =
@@ -226,13 +213,14 @@ export default function RegisterScreen({ route, navigation }) {
     })();
   }, []);
 
-  // Toast
+  // Toast helper
   const showToast = (message, type = "success") => {
     setToastMessage(message);
     setToastType(type);
     setToastVisible(true);
   };
 
+  // Pick image & animate
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -243,6 +231,14 @@ export default function RegisterScreen({ route, navigation }) {
       });
       if (!result.canceled) {
         setProfileImage(result.assets[0].uri);
+        // subtle pop on change
+        imgScale.setValue(0.9);
+        Animated.spring(imgScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 120,
+          useNativeDriver: true,
+        }).start();
         showToast("Profile picture added successfully!");
       }
     } catch {
@@ -250,35 +246,36 @@ export default function RegisterScreen({ route, navigation }) {
     }
   };
 
-  // Button press animations
+  // Button micro-interaction
   const onPressIn = () =>
-    Animated.spring(btnScale, { toValue: 0.95, useNativeDriver: true }).start();
+    Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start();
   const onPressOut = () =>
     Animated.spring(btnScale, { toValue: 1, useNativeDriver: true }).start();
 
-  // Validation helpers
-  async function validateStudent(email, password) {
+  // Helpers
+  async function validateStudent(emailIn, passwordIn) {
     try {
-      // 1) Make sure there’s a student doc
       const qRef = query(
         collection(db, "users"),
-        where("email", "==", email.trim()),
+        where("email", "==", emailIn.trim()),
         where("role", "==", "student")
       );
       const snap = await getDocs(qRef);
       if (snap.empty) return false;
 
-      // 2) Verify creds WITHOUT touching the main app auth state
       const secondaryAuth = getSecondaryAuth();
-      await signInWithEmailAndPassword(secondaryAuth, email.trim(), password);
-      await signOut(secondaryAuth); // clean up
+      await signInWithEmailAndPassword(
+        secondaryAuth,
+        emailIn.trim(),
+        passwordIn
+      );
+      await signOut(secondaryAuth);
       return true;
     } catch {
       return false;
     }
   }
 
-  // Derived flags
   const confirmMismatch =
     confirmTouched &&
     confirmPassword.length > 0 &&
@@ -290,14 +287,13 @@ export default function RegisterScreen({ route, navigation }) {
   const passwordRegex =
     /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
 
-  // Filtered subject list (search)
   const filteredSubjects = useMemo(() => {
     const q = subjectQuery.trim().toLowerCase();
     if (!q) return sriLankaSchoolSubjects;
     return sriLankaSchoolSubjects.filter((s) => s.toLowerCase().includes(q));
   }, [subjectQuery]);
 
-  // Registration handler
+  // Registration handler (logic unchanged)
   async function onRegister() {
     const trimmedEmail = (email || "").trim();
     setEmailError("");
@@ -387,7 +383,6 @@ export default function RegisterScreen({ route, navigation }) {
     }
   }
 
-  // Role-aware placeholder examples
   const namePlaceholder =
     role === "student"
       ? "Full name (e.g., Tharindu Perera)"
@@ -402,10 +397,8 @@ export default function RegisterScreen({ route, navigation }) {
 
   return (
     <PaperProvider theme={paperTheme}>
-      <StatusBar translucent barStyle="light-content" />
+      <StatusBar translucent barStyle="dark-content" />
       <View style={styles.root}>
-        {/* Breadcrumb sits above — nudge header a bit lower */}
-
         <KeyboardAvoidingView
           style={styles.kav}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -417,7 +410,6 @@ export default function RegisterScreen({ route, navigation }) {
             contentContainerStyle={[
               styles.content,
               {
-                paddingTop: Math.max(insets.top + 12, 24),
                 paddingBottom: Math.max(insets.bottom + 20, 32),
               },
             ]}
@@ -428,8 +420,8 @@ export default function RegisterScreen({ route, navigation }) {
                 transform: [{ translateY: slideY }, { scale: cardScale }],
               }}
             >
-              <Card.Content>
-                {/* Header */}
+              <View style={styles.formContainer}>
+                {/* Header (text + image animation applied) */}
                 <Animated.View
                   style={[
                     styles.headerContainer,
@@ -438,26 +430,37 @@ export default function RegisterScreen({ route, navigation }) {
                         { scale: logoScale },
                         { rotate: logoRotation },
                       ],
-                      marginTop: 8,
+                      marginTop: 4,
                     },
                   ]}
+                  accessibilityRole="header"
                 >
-                  <View style={styles.logoContainer}>
-                    <Text style={styles.appTitle} accessibilityRole="header">
-                      🎓 EduLink
-                    </Text>
-                  </View>
+                  {/* Transparent logo image (sits above title). Replace with your transparent PNG if needed */}
+                  <Animated.Image
+                    source={require("../assets/logo-3.png")}
+                    resizeMode="contain"
+                    style={[
+                      styles.brandLogo,
+                      { transform: [{ scale: imgScale }] },
+                    ]}
+                    accessibilityIgnoresInvertColors
+                  />
+                  <Text style={styles.appTitle}>🎓 EduLink</Text>
                   <Text style={styles.appTagline}>
                     Join our educational community
                   </Text>
                 </Animated.View>
 
-                {/* Profile Image Picker */}
+                {/* Profile Image Picker (animated) */}
                 <Pressable style={styles.imageContainer} onPress={pickImage}>
                   {profileImage ? (
-                    <Image
+                    <Animated.Image
                       source={{ uri: profileImage }}
-                      style={styles.profileImage}
+                      style={[
+                        styles.profileImage,
+                        { transform: [{ scale: imgScale }] },
+                      ]}
+                      resizeMode="cover"
                     />
                   ) : (
                     <View style={styles.imagePlaceholder}>
@@ -480,27 +483,31 @@ export default function RegisterScreen({ route, navigation }) {
                   <Text style={styles.sectionLabel}>Personal Information</Text>
 
                   <TextInput
+                    key="parent-name"
+                    nativeID="parent-name"
                     placeholder={namePlaceholder}
                     value={displayName}
                     onChangeText={setDisplayName}
                     mode="outlined"
                     style={styles.input}
-                    outlineColor="rgba(255,255,255,0.35)"
-                    activeOutlineColor={C.white}
+                    outlineColor={EDU_COLORS.gray300}
+                    activeOutlineColor={C.primary}
                     theme={INPUT_THEME}
-                    selectionColor={C.white}
-                    cursorColor={C.white}
+                    selectionColor={C.primary}
+                    cursorColor={C.primary}
                     contentStyle={styles.inputContent}
-                    left={
-                      <TextInput.Icon
-                        icon="account"
-                        size={20}
-                        color={C.placeholder}
-                      />
-                    }
+                    left={<TextInput.Icon icon="account" size={20} />}
+                    textContentType="name"
+                    autoComplete="name"
+                    autoCapitalize="words"
+                    autoCorrect={false}
                   />
 
+                  {/* PARENT / MAIN ACCOUNT EMAIL
+                        Distinct autofill semantics to prevent mirroring */}
                   <TextInput
+                    key="parent-email"
+                    nativeID="parent-email"
                     placeholder={
                       role === "parent"
                         ? "parent.name@email.com"
@@ -515,21 +522,17 @@ export default function RegisterScreen({ route, navigation }) {
                     style={styles.input}
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    outlineColor={
-                      emailError ? C.error : "rgba(255,255,255,0.35)"
-                    }
-                    activeOutlineColor={C.white}
+                    outlineColor={emailError ? C.error : EDU_COLORS.gray300}
+                    activeOutlineColor={C.primary}
                     theme={INPUT_THEME}
-                    selectionColor={C.white}
-                    cursorColor={C.white}
+                    selectionColor={C.primary}
+                    cursorColor={C.primary}
                     contentStyle={styles.inputContent}
-                    left={
-                      <TextInput.Icon
-                        icon="email"
-                        size={20}
-                        color={C.placeholder}
-                      />
-                    }
+                    left={<TextInput.Icon icon="email" size={20} />}
+                    textContentType="emailAddress"
+                    autoComplete="email" // <-- parent/main email
+                    importantForAutofill="yes"
+                    autoCorrect={false}
                   />
                   {!!emailError && (
                     <HelperText type="error" style={styles.helperText}>
@@ -548,6 +551,8 @@ export default function RegisterScreen({ route, navigation }) {
                   <Text style={styles.sectionLabel}>Security</Text>
 
                   <TextInput
+                    key="parent-pass"
+                    nativeID="parent-pass"
                     placeholder="Create a strong password"
                     value={password}
                     onChangeText={setPassword}
@@ -557,26 +562,22 @@ export default function RegisterScreen({ route, navigation }) {
                     mode="outlined"
                     style={styles.input}
                     secureTextEntry={secureTextEntry}
-                    outlineColor="rgba(255,255,255,0.35)"
-                    activeOutlineColor={C.white}
+                    outlineColor={EDU_COLORS.gray300}
+                    activeOutlineColor={C.primary}
                     theme={INPUT_THEME}
-                    selectionColor={C.white}
-                    cursorColor={C.white}
+                    selectionColor={C.primary}
+                    cursorColor={C.primary}
                     contentStyle={styles.inputContent}
-                    left={
-                      <TextInput.Icon
-                        icon="lock"
-                        size={20}
-                        color={C.placeholder}
-                      />
-                    }
+                    left={<TextInput.Icon icon="lock" size={20} />}
                     right={
                       <TextInput.Icon
                         icon={secureTextEntry ? "eye-off" : "eye"}
                         onPress={() => setSecureTextEntry(!secureTextEntry)}
-                        color={C.placeholder}
                       />
                     }
+                    textContentType="newPassword"
+                    autoComplete="password-new"
+                    autoCorrect={false}
                   />
 
                   <Text style={styles.passwordHint}>
@@ -585,6 +586,8 @@ export default function RegisterScreen({ route, navigation }) {
                   </Text>
 
                   <TextInput
+                    key="parent-pass-confirm"
+                    nativeID="parent-pass-confirm"
                     placeholder="Re-enter your password"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -593,30 +596,25 @@ export default function RegisterScreen({ route, navigation }) {
                     style={styles.input}
                     secureTextEntry={confirmSecureTextEntry}
                     outlineColor={
-                      confirmMismatch ? C.error : "rgba(255,255,255,0.35)"
+                      confirmMismatch ? C.error : EDU_COLORS.gray300
                     }
-                    activeOutlineColor={C.white}
+                    activeOutlineColor={confirmMismatch ? C.error : C.primary}
                     theme={INPUT_THEME}
-                    selectionColor={C.white}
-                    cursorColor={C.white}
+                    selectionColor={C.primary}
+                    cursorColor={C.primary}
                     contentStyle={styles.inputContent}
-                    left={
-                      <TextInput.Icon
-                        icon="lock-check"
-                        size={20}
-                        color={C.placeholder}
-                      />
-                    }
+                    left={<TextInput.Icon icon="lock-check" size={20} />}
                     right={
                       <TextInput.Icon
                         icon={confirmSecureTextEntry ? "eye-off" : "eye"}
                         onPress={() =>
                           setConfirmSecureTextEntry(!confirmSecureTextEntry)
                         }
-                        color={C.placeholder}
                       />
                     }
                     error={confirmMismatch}
+                    textContentType="oneTimeCode"
+                    autoCorrect={false}
                   />
                   {confirmMismatch && (
                     <HelperText type="error" style={styles.helperText}>
@@ -662,7 +660,7 @@ export default function RegisterScreen({ route, navigation }) {
                           }}
                           activeOpacity={0.85}
                         >
-                          <RadioButton value={r} color={C.white} />
+                          <RadioButton value={r} color={C.primary} />
                           <Text style={styles.radioText}>
                             {r.charAt(0).toUpperCase() + r.slice(1)}
                           </Text>
@@ -672,7 +670,7 @@ export default function RegisterScreen({ route, navigation }) {
                   </RadioButton.Group>
                 </Animated.View>
 
-                {/* Role-specific Fields */}
+                {/* Student fields */}
                 {role === "student" && (
                   <Animated.View
                     style={[
@@ -689,6 +687,8 @@ export default function RegisterScreen({ route, navigation }) {
                       accessibilityRole="button"
                     >
                       <TextInput
+                        key="student-grade"
+                        nativeID="student-grade"
                         placeholder={GRADE_PLACEHOLDER}
                         value={grade}
                         mode="outlined"
@@ -696,25 +696,22 @@ export default function RegisterScreen({ route, navigation }) {
                         outlineColor={
                           !String(grade || "").trim() && gradeTouched
                             ? C.error
-                            : "rgba(255,255,255,0.35)"
+                            : EDU_COLORS.gray300
                         }
-                        activeOutlineColor={C.white}
+                        activeOutlineColor={
+                          !String(grade || "").trim() && gradeTouched
+                            ? C.error
+                            : C.primary
+                        }
                         theme={INPUT_THEME}
-                        selectionColor={C.white}
-                        cursorColor={C.white}
+                        selectionColor={C.primary}
+                        cursorColor={C.primary}
                         contentStyle={styles.inputContent}
                         editable={false}
-                        left={
-                          <TextInput.Icon
-                            icon="school"
-                            size={20}
-                            color={C.placeholder}
-                          />
-                        }
+                        left={<TextInput.Icon icon="school" size={20} />}
                         right={
                           <TextInput.Icon
                             icon="chevron-down"
-                            color={C.placeholder}
                             onPress={() => setGradePickerOpen(true)}
                             forceTextInputFocus={false}
                           />
@@ -803,8 +800,6 @@ export default function RegisterScreen({ route, navigation }) {
                                 setGradeTouched(true);
                             }}
                             style={styles.modalButton}
-                            buttonColor={C.secondary}
-                            textColor="#FFFFFF"
                           >
                             Confirm
                           </Button>
@@ -814,6 +809,7 @@ export default function RegisterScreen({ route, navigation }) {
                   </Animated.View>
                 )}
 
+                {/* Teacher fields */}
                 {role === "teacher" && (
                   <Animated.View
                     style={[
@@ -830,6 +826,8 @@ export default function RegisterScreen({ route, navigation }) {
                       accessibilityRole="button"
                     >
                       <TextInput
+                        key="teacher-subject"
+                        nativeID="teacher-subject"
                         placeholder={SUBJECT_PLACEHOLDER}
                         value={subject}
                         mode="outlined"
@@ -837,25 +835,22 @@ export default function RegisterScreen({ route, navigation }) {
                         outlineColor={
                           subjectInvalidForTeacher
                             ? C.error
-                            : "rgba(255,255,255,0.35)"
+                            : EDU_COLORS.gray300
                         }
-                        activeOutlineColor={C.white}
+                        activeOutlineColor={
+                          subjectInvalidForTeacher ? C.error : C.primary
+                        }
                         theme={INPUT_THEME}
-                        selectionColor={C.white}
-                        cursorColor={C.white}
+                        selectionColor={C.primary}
+                        cursorColor={C.primary}
                         contentStyle={styles.inputContent}
                         editable={false}
                         left={
-                          <TextInput.Icon
-                            icon="book-education"
-                            size={20}
-                            color={C.placeholder}
-                          />
+                          <TextInput.Icon icon="book-education" size={20} />
                         }
                         right={
                           <TextInput.Icon
                             icon="chevron-down"
-                            color={C.placeholder}
                             onPress={() => setSubjectPickerOpen(true)}
                             forceTextInputFocus={false}
                           />
@@ -892,22 +887,26 @@ export default function RegisterScreen({ route, navigation }) {
 
                         <View style={styles.searchBar}>
                           <TextInput
+                            key="teacher-subject-search"
                             mode="outlined"
                             placeholder="Search subjects…"
                             value={subjectQuery}
                             onChangeText={setSubjectQuery}
                             style={styles.searchInput}
-                            outlineColor={C.primary + "40"}
+                            outlineColor={EDU_COLORS.gray300}
                             activeOutlineColor={C.primary}
                             theme={{
                               ...INPUT_THEME,
                               colors: {
                                 ...INPUT_THEME.colors,
                                 text: EDU_COLORS.textPrimary,
-                                placeholder: "#94A3B8",
+                                placeholder: EDU_COLORS.textMuted,
                               },
                             }}
                             left={<TextInput.Icon icon="magnify" />}
+                            textContentType="none"
+                            autoComplete="off"
+                            autoCorrect={false}
                           />
                         </View>
 
@@ -946,7 +945,7 @@ export default function RegisterScreen({ route, navigation }) {
                           ))}
                           {filteredSubjects.length === 0 && (
                             <View style={{ padding: 20 }}>
-                              <Text style={{ color: C.primary + "CC" }}>
+                              <Text style={{ color: C.primary }}>
                                 No subjects match your search.
                               </Text>
                             </View>
@@ -972,8 +971,6 @@ export default function RegisterScreen({ route, navigation }) {
                               if (!subject.trim()) setSubjectTouched(true);
                             }}
                             style={styles.modalButton}
-                            buttonColor={C.secondary}
-                            textColor="#FFFFFF"
                           >
                             Confirm
                           </Button>
@@ -983,6 +980,7 @@ export default function RegisterScreen({ route, navigation }) {
                   </Animated.View>
                 )}
 
+                {/* Parent fields */}
                 {role === "parent" && (
                   <Animated.View
                     style={[
@@ -997,7 +995,10 @@ export default function RegisterScreen({ route, navigation }) {
                       Connect to your child's existing EduLink account
                     </HelperText>
 
+                    {/* STUDENT EMAIL — disable autofill to avoid mirroring */}
                     <TextInput
+                      key="student-email"
+                      nativeID="student-email"
                       placeholder="Student email (e.g., child.name@school.lk)"
                       value={studentEmail}
                       onChangeText={setStudentEmail}
@@ -1005,40 +1006,39 @@ export default function RegisterScreen({ route, navigation }) {
                       style={styles.input}
                       keyboardType="email-address"
                       autoCapitalize="none"
-                      outlineColor="rgba(255,255,255,0.35)"
-                      activeOutlineColor={C.white}
+                      outlineColor={EDU_COLORS.gray300}
+                      activeOutlineColor={C.primary}
                       theme={INPUT_THEME}
-                      selectionColor={C.white}
-                      cursorColor={C.white}
+                      selectionColor={C.primary}
+                      cursorColor={C.primary}
                       contentStyle={styles.inputContent}
-                      left={
-                        <TextInput.Icon
-                          icon="account-child"
-                          size={20}
-                          color={C.placeholder}
-                        />
-                      }
+                      left={<TextInput.Icon icon="account-child" size={20} />}
+                      // Critical: stop OS from pairing with the parent email field
+                      textContentType="none"
+                      autoComplete="off"
+                      importantForAutofill="no"
+                      autoCorrect={false}
                     />
+
                     <TextInput
+                      key="student-pass"
+                      nativeID="student-pass"
                       placeholder="Student password"
                       value={studentPassword}
                       onChangeText={setStudentPassword}
                       mode="outlined"
                       style={styles.input}
                       secureTextEntry
-                      outlineColor="rgba(255,255,255,0.35)"
-                      activeOutlineColor={C.white}
+                      outlineColor={EDU_COLORS.gray300}
+                      activeOutlineColor={C.primary}
                       theme={INPUT_THEME}
-                      selectionColor={C.white}
-                      cursorColor={C.white}
+                      selectionColor={C.primary}
+                      cursorColor={C.primary}
                       contentStyle={styles.inputContent}
-                      left={
-                        <TextInput.Icon
-                          icon="lock"
-                          size={20}
-                          color={C.placeholder}
-                        />
-                      }
+                      left={<TextInput.Icon icon="lock" size={20} />}
+                      textContentType="password"
+                      autoComplete="password"
+                      autoCorrect={false}
                     />
                     <HelperText type="info" style={styles.infoHelper}>
                       Used once to securely verify your child's account
@@ -1067,8 +1067,6 @@ export default function RegisterScreen({ route, navigation }) {
                     labelStyle={styles.buttonLabel}
                     accessibilityLabel="Join EduLink"
                     disabled={busy}
-                    buttonColor={C.secondary}
-                    textColor="#FFFFFF"
                   >
                     {busy ? "Joining..." : "Join EduLink"}
                   </Button>
@@ -1082,13 +1080,14 @@ export default function RegisterScreen({ route, navigation }) {
                   ]}
                 >
                   <View style={styles.linksRow}>
-                    <Text style={{ color: "#EAF8FF" }}>Already Joined?</Text>
+                    <Text style={styles.footerText}>Already Joined?</Text>
                     <Button
                       mode="text"
                       onPress={() => navigation.replace("Login", {})}
-                      textColor="#066A76"
+                      textColor={C.primary}
                       compact
                       labelStyle={styles.link}
+                      icon="arrow-right"
                     >
                       Start Learning
                     </Button>
@@ -1097,7 +1096,7 @@ export default function RegisterScreen({ route, navigation }) {
                     Secure by Firebase • Privacy-first
                   </Text>
                 </Animated.View>
-              </Card.Content>
+              </View>
             </Animated.View>
           </ScrollView>
 
@@ -1109,7 +1108,7 @@ export default function RegisterScreen({ route, navigation }) {
             style={[
               styles.snackbar,
               {
-                backgroundColor: toastType === "error" ? C.error : C.secondary,
+                backgroundColor: toastType === "error" ? C.error : C.primary,
               },
             ]}
             accessibilityLiveRegion="polite"
@@ -1127,88 +1126,65 @@ export default function RegisterScreen({ route, navigation }) {
   );
 }
 
+/* --------------------------------- STYLES --------------------------------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16 },
   root: {
     flex: 1,
-    paddingTop: -40,
-    // Solid brand background (gradient removed)
   },
-
   kav: { flex: 1 },
   scrollView: { flex: 1 },
+  content: { paddingHorizontal: 20 },
 
-  content: {
-    paddingHorizontal: 20,
-  },
-
-  // Breadcrumb-style back (sits above header; header is nudged down a bit)
-  breadcrumbBack: {
-    marginTop: 40,
-    marginLeft: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  breadcrumbBackIcon: {
-    fontSize: 18,
-    color: "#EAF8FF",
-    fontWeight: "700",
-    marginRight: 4,
-  },
-  breadcrumbBackText: {
-    fontSize: 15,
-    color: "#EAF8FF",
-    fontWeight: "700",
-  },
-
-  // Card “glass” container
+  /* Card */
   card: {
     borderRadius: 24,
-
+    backgroundColor: EDU_COLORS.surfaceSolid,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    elevation: 12,
-    shadowColor: "#000",
+    borderColor: EDU_COLORS.gray200,
+    elevation: 8,
+    shadowColor: EDU_COLORS.shadow,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.18,
     shadowRadius: 16,
-    marginBottom: 20,
+    marginBottom: 0,
     overflow: "hidden",
   },
+  formContainer: {
+    flexGrow: 1,
 
-  // Header
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  /* Header */
   headerContainer: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
-  logoContainer: { marginBottom: 8 },
+  brandLogo: {
+    width: 200,
+    height: 200,
+    marginBottom: 6,
+    backgroundColor: "transparent", // supports transparent PNGs
+  },
   appTitle: {
-    color: C.white,
-    fontSize: 32,
+    color: EDU_COLORS.textPrimary,
+    fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.3,
     textAlign: "center",
-    textShadowColor: "rgba(0, 0, 0, 0.1)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   appTagline: {
-    color: C.label,
+    color: EDU_COLORS.textSecondary,
     fontSize: 16,
     fontWeight: "600",
     textAlign: "center",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
-  // Image
+  /* Image */
   imageContainer: {
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 24,
     alignSelf: "center",
     position: "relative",
   },
@@ -1216,86 +1192,86 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    borderWidth: 4,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: 3,
+    borderColor: EDU_COLORS.gray200,
+    backgroundColor: "transparent",
   },
   imagePlaceholder: {
     width: 140,
     height: 140,
-    borderRadius: 60,
-
+    borderRadius: 70,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: 2,
+    borderColor: EDU_COLORS.gray300,
     borderStyle: "dashed",
+    backgroundColor: EDU_COLORS.surface,
   },
   imagePlaceholderEmoji: { fontSize: 32, marginBottom: 6 },
   imageText: {
     fontSize: 14,
-    color: C.white,
+    color: EDU_COLORS.textSecondary,
     fontWeight: "600",
-    opacity: 0.9,
   },
   imageOverlay: {
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: C.secondary,
+    backgroundColor: EDU_COLORS.primary,
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 3,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: EDU_COLORS.surfaceSolid,
   },
-  imageOverlayText: { fontSize: 16, color: C.white },
+  imageOverlayText: { fontSize: 16, color: "#FFFFFF" },
 
-  // Sections
-  section: { marginBottom: 24 },
+  /* Sections */
+  section: { marginBottom: 20 },
   sectionLabel: {
     fontSize: 18,
     fontWeight: "700",
-    marginBottom: 16,
-    color: C.white,
+    marginBottom: 12,
+    color: EDU_COLORS.textPrimary,
     letterSpacing: -0.2,
   },
 
-  // Inputs
+  /* Inputs */
   input: {
-    marginBottom: 16,
-
+    marginBottom: 14,
     borderRadius: 16,
     height: 56,
+    backgroundColor: EDU_COLORS.surfaceSolid,
   },
   inputContent: {
-    color: C.white,
+    color: EDU_COLORS.textPrimary,
     fontSize: 16,
     textAlignVertical: "center",
   },
 
-  // Helpers
+  /* Helpers */
   helperText: {
     fontSize: 13,
-    marginTop: -8,
+    marginTop: -6,
     marginBottom: 8,
     color: C.error,
   },
   infoHelper: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.78)",
-    marginBottom: 12,
+    color: EDU_COLORS.textSecondary,
+    marginBottom: 10,
   },
   passwordHint: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.72)",
-    marginTop: -8,
-    marginBottom: 12,
+    color: EDU_COLORS.textMuted,
+    marginTop: -6,
+    marginBottom: 10,
     fontStyle: "italic",
   },
 
-  // Role selector
+  /* Role selector */
   radioContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1310,28 +1286,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.3)",
+    borderColor: EDU_COLORS.gray200,
+    backgroundColor: EDU_COLORS.surfaceSolid,
   },
   radioCardSelected: {
-    borderColor: C.white,
+    borderColor: C.primary,
   },
   radioText: {
     fontSize: 14,
     fontWeight: "600",
-    color: C.white,
+    color: EDU_COLORS.textPrimary,
     marginLeft: 4,
   },
 
-  // Modal
+  /* Modal */
   modalContainer: {
     borderRadius: 20,
     backgroundColor: C.base,
     paddingVertical: 0,
     maxHeight: "75%",
     elevation: 24,
-    shadowColor: "#000",
+    shadowColor: EDU_COLORS.shadow,
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.24,
     shadowRadius: 24,
   },
   modalHeader: { padding: 20, paddingBottom: 12 },
@@ -1344,9 +1321,9 @@ const styles = StyleSheet.create({
   searchBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
   searchInput: {
     height: 46,
-
     marginBottom: 8,
     borderRadius: 12,
+    backgroundColor: EDU_COLORS.surfaceSolid,
   },
   modalScrollView: { maxHeight: 320 },
   subjectRow: {
@@ -1356,12 +1333,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.1)",
+    borderBottomColor: EDU_COLORS.gray200,
+    backgroundColor: EDU_COLORS.surfaceSolid,
   },
-  subjectRowSelected: { backgroundColor: C.secondary + "20" },
+  subjectRowSelected: { backgroundColor: C.secondary },
   subjectRowText: { fontSize: 16, color: C.primary, flex: 1 },
-  subjectRowTextSelected: { color: C.secondary, fontWeight: "600" },
-  checkmark: { fontSize: 18, color: C.secondary, fontWeight: "bold" },
+  subjectRowTextSelected: { color: EDU_COLORS.textPrimary, fontWeight: "600" },
+  checkmark: { fontSize: 18, color: C.primary, fontWeight: "bold" },
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -1371,21 +1349,22 @@ const styles = StyleSheet.create({
   },
   modalButton: { minWidth: 100 },
 
-  // Button
-  buttonContainer: { marginTop: 8, marginBottom: 16 },
+  /* CTA */
+  buttonContainer: { marginTop: 4, marginBottom: 16 },
   button: {
     borderRadius: 20,
+    backgroundColor: C.primary,
   },
   buttonContent: { height: 58 },
   buttonLabel: {
     fontSize: 17,
     fontWeight: "800",
     letterSpacing: 0.5,
-    color: C.white,
+    color: "#FFFFFF",
   },
 
-  // Footer
-  footerContainer: { alignItems: "center", marginTop: 8 },
+  /* Footer */
+  footerContainer: { alignItems: "center", marginTop: 4 },
   linksRow: {
     flexDirection: "row",
     gap: 8,
@@ -1393,16 +1372,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  footerText: { color: "#EAF8FF", opacity: 0.9, fontSize: 14 },
+  footerText: { color: EDU_COLORS.textSecondary, fontSize: 14 },
   link: { fontWeight: "700", fontSize: 14 },
   microcopy: {
     textAlign: "center",
     fontSize: 12,
-    color: C.white,
-    opacity: 0.7,
+    color: EDU_COLORS.textMuted,
   },
 
-  // Snackbar
+  /* Snackbar */
   snackbar: { borderRadius: 14, marginHorizontal: 16, marginBottom: 20 },
-  snackbarText: { color: C.white, fontWeight: "600", fontSize: 14 },
+  snackbarText: { color: "#FFFFFF", fontWeight: "600", fontSize: 14 },
 });
