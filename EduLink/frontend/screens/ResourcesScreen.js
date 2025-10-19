@@ -1688,14 +1688,16 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   tileCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    width: "100%",
+    maxWidth: 480,
+    paddingVertical: 24,
+    paddingHorizontal: 24,
     borderRadius: 16,
     backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: CARD_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
     ...Platform.select({
       ios: {
         shadowOpacity: 0.08,
@@ -1707,10 +1709,10 @@ const styles = StyleSheet.create({
   },
   loadingCard: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 480,
     borderRadius: 16,
     paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     backgroundColor: C.surfaceSolid,
     borderWidth: 1,
     borderColor: C.border,

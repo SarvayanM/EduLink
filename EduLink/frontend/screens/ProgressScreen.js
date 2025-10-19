@@ -41,13 +41,13 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
 
 const PAGE_TOP_OFFSET = 8;
 
-/* ---------- Loading strip (compact tile) ---------- */
+/* ---------- Compact, tile-like loading card (matching QuestionFeedScreen) ---------- */
 const LoadingStrip = ({
-  title = "Loading Your Progress ...",
+  title = "Loading Your Progress",
   subtitle = "Personalizing stats and leaderboard…",
 }) => {
   const anim = useRef(new Animated.Value(0)).current;
-  const [trackW, setTrackW] = useState(0);
+  const [trackW, setTrackW] = React.useState(0);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -59,7 +59,9 @@ const LoadingStrip = ({
       })
     );
     loop.start();
-    return () => anim.stopAnimation(() => anim.setValue(0));
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
   }, [anim]);
 
   const translateX =
@@ -73,11 +75,9 @@ const LoadingStrip = ({
   return (
     <View style={styles.loadingCenterWrap}>
       <View style={styles.loadingCard}>
-        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-        <Text style={styles.loadingTitle}>{title}</Text>
-        {subtitle ? (
-          <Text style={styles.loadingSubtitle}>{subtitle}</Text>
-        ) : null}
+        <Text style={styles.loadingTitle}>⏳ {title}</Text>
+        <Text style={styles.loadingSubtitle}>{subtitle}</Text>
+
         <View
           style={styles.progressTrack}
           onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
@@ -85,7 +85,7 @@ const LoadingStrip = ({
           <Animated.View
             style={[
               styles.progressBarIndeterminate,
-              { transform: [{ translateX }] },
+              trackW ? { transform: [{ translateX }] } : null,
             ]}
           />
         </View>
@@ -587,28 +587,25 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  /* Loading strip styles */
+  /* Loading strip styles (centered on screen - full width) */
   loadingCenterWrap: {
+    flex: 1,
     width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
   },
   loadingCard: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 480,
     borderRadius: 16,
     paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: CARD_BORDER,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
   },
   loadingTitle: {
     marginTop: 8,

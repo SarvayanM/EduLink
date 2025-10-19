@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Dimensions,
 } from "react-native";
 import {
   TextInput,
@@ -46,7 +47,49 @@ import {
   Buttons,
   PALETTE_60_30_10,
 } from "../theme/colors";
+
 import { NAVBAR_HEIGHT } from "../components/TopNavbar";
+
+/* ---------- Small helpers & fallbacks ---------- */
+const C = {
+  infoLight: EDU_COLORS?.infoLight ?? "#E0F2FE",
+  infoDark: EDU_COLORS?.infoDark ?? "#075985",
+  primaryLight: EDU_COLORS?.primaryLight ?? "#93C5FD",
+  primaryXL: EDU_COLORS?.primaryExtraLight ?? "#EFF6FF",
+  success: EDU_COLORS?.success ?? "#16A34A",
+  gray50: EDU_COLORS?.gray50 ?? "#F9FAFB",
+  gray100: EDU_COLORS?.gray100 ?? "#F3F4F6",
+  gray200: EDU_COLORS?.gray200 ?? "#E5E7EB",
+  gray300: EDU_COLORS?.gray300 ?? "#D1D5DB",
+  gray400: EDU_COLORS?.gray400 ?? "#9CA3AF",
+  gray500: EDU_COLORS?.gray500 ?? "#6B7280",
+  gray600: EDU_COLORS?.gray600 ?? "#4B5563",
+  gray700: EDU_COLORS?.gray700 ?? "#374151",
+  gray800: EDU_COLORS?.gray800 ?? "#1F2937",
+  gray900: EDU_COLORS?.gray900 ?? "#111827",
+  primary: EDU_COLORS?.primary ?? "#0A8CA0",
+  accent: EDU_COLORS?.accent ?? "#F59E0B",
+  surfaceSolid: EDU_COLORS?.surfaceSolid ?? "#FFFFFF",
+  border: Surfaces?.border ?? "#E5E7EB",
+  elevated: Surfaces?.elevated ?? "#FFFFFF",
+};
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CORNER_RADIUS = 16;
+
+const CONTENT_HORIZONTAL_PADDING = 20;
+const CARD_HORIZONTAL_PADDING = 18;
+const CARD_VERTICAL_PADDING = 18;
+
+// Robust color tokens (avoid undefined theme keys)
+const PRIMARY = EDU_COLORS?.primary ?? "#0A8CA0";
+const PRIMARY_TEXT = EDU_COLORS?.textPrimary ?? "#0B1220";
+const SECONDARY_TEXT = EDU_COLORS?.textSecondary ?? "#475569";
+const ERROR = EDU_COLORS?.error ?? "#EF4444";
+const SURFACE = Surfaces?.solid ?? "#FFFFFF";
+const BORDER = Surfaces?.border ?? "#E5E7EB";
+const BUTTON_BG = Buttons?.primaryBg ?? PRIMARY;
+const BUTTON_TEXT = Buttons?.primaryText ?? "#FFFFFF";
+const ACCENT10 = PALETTE_60_30_10?.accent10 ?? "rgba(245, 158, 11, 0.14)"; // amber-ish
 
 /* ---------- Reusable Blur card ---------- */
 const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
@@ -56,6 +99,58 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
 );
 
 const PAGE_TOP_OFFSET = 12;
+
+const LoadingCard = ({
+  title = "Loading Q&A",
+  subtitle = "Fetching the latest unanswered questions…",
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = React.useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+        easing: Easing.inOut(Easing.cubic),
+      })
+    );
+    loop.start();
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
+  }, [anim]);
+
+  const translateX =
+    trackW > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-80, Math.max(trackW - 80, 0)],
+        })
+      : 0;
+
+  return (
+    <View style={styles.loadingCenterWrap}>
+      <View style={styles.tileCard}>
+        <Text style={styles.tileTitle}>⏳ {title}</Text>
+        <Text style={styles.tileSubtitle}>{subtitle}</Text>
+
+        <View
+          style={styles.progressTrack}
+          onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[
+              styles.progressBar,
+              trackW ? { transform: [{ translateX }] } : null,
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+};
 
 /* ---------- Small appear animation wrapper ---------- */
 const Appear = ({ children, delay = 0, style }) => {
@@ -457,28 +552,10 @@ export default function StudyPlannerScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingFullscreenCenter}>
-        <View style={styles.loadingCard}>
-          <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-          <Text style={styles.loadingTitle}>Loading Your Study Planner…</Text>
-          <Text style={styles.loadingSubtitle}>
-            Fetching today’s tasks and sessions
-          </Text>
-
-          {/* Indeterminate progress bar */}
-          <View
-            style={styles.progressTrackIndeterminate}
-            onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
-          >
-            <Animated.View
-              style={[
-                styles.progressBarIndeterminate,
-                { transform: [{ translateX: barTranslate }] },
-              ]}
-            />
-          </View>
-        </View>
-      </SafeAreaView>
+      <LoadingCard
+        title="Loading your study planner …"
+        subtitle="Fetching today's tasks and sessions …"
+      />
     );
   }
 
@@ -840,7 +917,9 @@ export default function StudyPlannerScreen() {
       </ScrollView>
 
       {/* Add Task Modal (with overlay) */}
-      {showAddTask && <View style={styles.overlay} pointerEvents="none" />}
+      <Portal>
+        {showAddTask && <View style={styles.overlay} pointerEvents="none" />}
+      </Portal>
       <Portal>
         <Dialog
           visible={showAddTask}
@@ -925,7 +1004,9 @@ export default function StudyPlannerScreen() {
       </Portal>
 
       {/* Add Study Session Modal (with overlay) */}
-      {showAddSession && <View style={styles.overlay} pointerEvents="none" />}
+      <Portal>
+        {showAddSession && <View style={styles.overlay} pointerEvents="none" />}
+      </Portal>
       <Portal>
         <Dialog
           visible={showAddSession}
@@ -976,7 +1057,7 @@ export default function StudyPlannerScreen() {
 }
 
 /* ===================== Styles (tokens-driven) ===================== */
-const CARD_BG = Surfaces?.solid ?? "#0B1220";
+const CARD_BG = Surfaces?.solid ?? "#FFFFFF";
 const CARD_BORDER = Surfaces?.border ?? "rgba(148,163,184,0.24)";
 
 const styles = StyleSheet.create({
@@ -987,7 +1068,11 @@ const styles = StyleSheet.create({
 
   /* Overlay for dialogs */
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: "rgba(15, 23, 42, 0.75)",
     alignItems: "center",
     justifyContent: "center",
@@ -1290,37 +1375,88 @@ const styles = StyleSheet.create({
   prChipText: { fontSize: 12, fontWeight: "800", color: EDU_COLORS.gray700 },
 
   /* Loading screen */
+  loadingCenterWrap: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    backgroundColor: "transparent",
+  },
+  tile: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2,
+    paddingVertical: 14,
+  },
+  px16: { paddingHorizontal: 16 },
+
+  tileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  tileTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: EDU_COLORS.textPrimary,
+  },
+  tileSubtitle: {
+    fontSize: 13.5,
+    color: EDU_COLORS.textSecondary,
+    marginTop: 2,
+  },
+
   loadingFullscreenCenter: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 16,
   },
-  loadingCard: {
+  tileCard: {
     width: "100%",
-    maxWidth: 520,
-    borderRadius: 16,
+    maxWidth: 480,
     paddingVertical: 24,
-    paddingHorizontal: 20,
-    backgroundColor: EDU_COLORS.surfaceSolid,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: CARD_BORDER,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
   },
-  loadingTitle: {
+
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: CARD_BORDER,
+    overflow: "hidden",
     marginTop: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: EDU_COLORS.textPrimary ?? "#0B1220",
-    textAlign: "center",
   },
-  loadingSubtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: EDU_COLORS.textSecondary ?? "rgba(255,255,255,0.75)",
-    textAlign: "center",
-    marginBottom: 8,
+  progressBar: {
+    width: 80,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: BUTTON_BG,
   },
+
+  loadingIndicator: { marginVertical: 20 },
 });

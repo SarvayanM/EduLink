@@ -9,6 +9,7 @@ import {
   Platform,
   Animated,
   Easing,
+  Modal,
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +17,7 @@ import { BlurView } from "expo-blur";
 import { auth, db } from "../services/firebaseAuth";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { Surfaces, EDU_COLORS, Buttons } from "../theme/colors";
+import { signOut } from "firebase/auth";
 
 /* ---- Constants ---- */
 export const NAVBAR_HEIGHT = 60;
@@ -51,25 +53,28 @@ const showToast = (type, text1, text2) =>
  * Props:
  * - currentRouteName: string
  * - onBack?: () => void
- * - navigationRef?: React.RefObject<NavigationContainerRef>   <-- use this!
+ * - navigationRef?: React.RefObject<NavigationContainerRef>
  * - insets?: { top: number }
  * - logoSource?: ImageSource
  */
 export default function TopNavbar({
   currentRouteName,
   onBack,
-  navigationRef, // ✅ get a ref from App.js
+  navigationRef,
   insets,
   logoSource,
 }) {
   const route = currentRouteName || "Home";
   const isAuthScreen = route === "Login" || route === "Register";
-  const showBack = !isAuthScreen && typeof onBack === "function";
+  const isMainScreen = route === "Main" || route === "Home";
+  const showBack =
+    !isAuthScreen && !isMainScreen && typeof onBack === "function";
   const title = isAuthScreen ? "" : FRIENDLY_TITLES[route] || route;
 
   // ---- profile + notifications state ----
   const [profileImage, setProfileImage] = useState(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // ---- animations ----
   const mount = useRef(new Animated.Value(0)).current;
@@ -142,6 +147,23 @@ export default function TopNavbar({
   const goHomeIfTitle = () => {
     if (title === "EduLink" || route === "Home" || route === "Main") {
       nav?.navigate?.("Home");
+    }
+  };
+
+  const onLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    try {
+      await signOut(auth);
+      showToast("success", "Signed out", "See you soon 👋");
+      // Note: No manual navigation here. onAuthStateChanged in App.js
+      // will set user=null and automatically render the Unauthed stack
+      // which shows Login/Register. This avoids RESET warnings.
+    } catch (err) {
+      showToast("error", "Logout failed", err?.message || "Try again");
     }
   };
 
@@ -250,11 +272,74 @@ export default function TopNavbar({
                 </View>
               )}
             </Pressable>
+
+            {/* NEW: Logout button */}
+            <Pressable
+              onPress={onLogout}
+              style={styles.iconBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+            >
+              <Ionicons
+                name="log-out-outline"
+                size={22}
+                color={EDU_COLORS.textPrimary}
+              />
+            </Pressable>
           </View>
         )}
       </BlurView>
 
       <View style={styles.borderLine} />
+
+      {/* Logout Confirmation Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowLogoutModal(false)}
+          />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Ionicons
+                name="log-out-outline"
+                size={32}
+                color="red" // Apply red color directly
+              />
+              <Text style={styles.modalTitle}>Sign Out</Text>
+            </View>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to sign out?
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowLogoutModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.logoutButton]}
+                onPress={confirmLogout}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm logout"
+              >
+                <Text style={styles.logoutButtonText}>Logout</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Animated.View>
   );
 }
@@ -358,5 +443,77 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: EDU_COLORS?.textPrimary ?? "#0B1220",
+  },
+
+  // Logout Modal Styles
+  modalOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalHeader: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: EDU_COLORS?.textPrimary ?? "#0B1220",
+    marginTop: 12,
+    textAlign: "center",
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: EDU_COLORS?.textSecondary ?? "#64748B",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButton: {
+    backgroundColor: Surfaces?.soft ?? "#F1F5F9",
+    borderWidth: 1,
+    borderColor: Surfaces?.border ?? "#E2E8F0",
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: EDU_COLORS?.textPrimary ?? "#0B1220",
+  },
+  logoutButton: {
+    backgroundColor: EDU_COLORS?.error || "#EF4444",
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });

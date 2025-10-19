@@ -1015,28 +1015,25 @@ const styles = StyleSheet.create({
   },
   centered: { alignItems: "center", justifyContent: "center" },
 
-  /* ---- Loading ---- */
+  /* ---- Loading (centered on screen - full width) ---- */
   loadingCenterWrap: {
+    flex: 1,
     width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
   },
   loadingCard: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 480,
     borderRadius: 16,
     paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     backgroundColor: EDU_COLORS.surfaceSolid,
     borderWidth: 1,
     borderColor: Surfaces?.border ?? "#1F2937",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
   },
   loadingTitle: {
     marginTop: 8,

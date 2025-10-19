@@ -1,14 +1,11 @@
 // frontend/App.js
-import { useEffect, useState } from "react";
-import { ImageBackground } from "react-native";
-
-import LoadingPage from "./components/LoadingPage";
-
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
-  ActivityIndicator,
   StyleSheet,
+  Animated,
+  Easing,
   StatusBar,
   Platform,
 } from "react-native";
@@ -16,13 +13,12 @@ import {
 import {
   NavigationContainer,
   useNavigationContainerRef,
-  CommonActions,
   DefaultTheme as NavDefaultTheme,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Provider as PaperProvider } from "react-native-paper";
-import { paperTheme, EDU_COLORS, APP_GRADIENT } from "./theme/colors";
+import { paperTheme, APP_GRADIENT, EDU_COLORS } from "./theme/colors";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./services/firebaseAuth";
@@ -34,9 +30,11 @@ import {
 } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import TopNavbar, { NAVBAR_HEIGHT } from "./components/TopNavbar";
-import BottomNavbar, { BOTTOM_NAV_HEIGHT } from "./components/BottomNavbar";
-import AcademicLoading from "./components/AcademicLoading";
+import BottomNavbar from "./components/BottomNavbar";
+import { Ionicons } from "@expo/vector-icons";
+
 /* Screens */
+import LandingScreen from "./screens/LandingScreen";
 import HomeScreen from "./screens/HomeScreen";
 import LoginScreen from "./screens/LoginScreen";
 import RegisterScreen from "./screens/RegisterScreen";
@@ -53,31 +51,11 @@ import StudyPlannerScreen from "./screens/StudyPlannerScreen";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-<LinearGradient
-  colors={APP_GRADIENT}
-  start={{ x: 0, y: 0 }}
-  end={{ x: 0, y: 1 }}
-  locations={[0, 0.4, 1]}
-  style={StyleSheet.absoluteFill}
-/>;
-
-/* ---------- Global Toast host (clears fixed navbar) ---------- */
-function ToastHost() {
-  const insets = useSafeAreaInsets();
-  return (
-    <Toast
-      topOffset={(insets?.top || 0) + NAVBAR_HEIGHT + 8}
-      style={{ zIndex: 9999, elevation: 9999 }}
-    />
-  );
-}
-
 /* ---------- Shared options ---------- */
 const stackCommon = {
   headerShown: false,
   contentStyle: { backgroundColor: "transparent" },
 };
-
 const tabsCommon = {
   headerShown: false,
   tabBarStyle: { display: "none" },
@@ -98,7 +76,6 @@ function StudentTabs() {
   );
 }
 const TutorTabs = StudentTabs;
-
 function TeacherTabs() {
   return (
     <Tab.Navigator screenOptions={tabsCommon}>
@@ -109,7 +86,6 @@ function TeacherTabs() {
     </Tab.Navigator>
   );
 }
-
 function ParentTabs() {
   return (
     <Tab.Navigator screenOptions={tabsCommon}>
@@ -130,8 +106,6 @@ function ParentTabs() {
     </Tab.Navigator>
   );
 }
-
-/* ---------- Tabs by role ---------- */
 function TabsByRole({ role }) {
   switch (role) {
     case "tutor":
@@ -150,65 +124,170 @@ function MainTabs({ route }) {
   return <TabsByRole role={roleFromParams} />;
 }
 
-/* ---------- Friendly titles for breadcrumbs ---------- */
-const FRIENDLY_TITLES = {
-  Main: "Home",
-  AskQuestion: "Ask Question",
-  Notifications: "Notifications",
-  ClassroomDetail: "Classroom",
-  Profile: "Profile",
-  Login: "Login",
-  Register: "Create Account",
-  ParentDashboard: "Parent Dashboard",
-  // tabs
-  Home: "Home",
-  "Q&A": "Q&A",
-  Resources: "Resources",
-  StudyPlanner: "Study Planner",
-  Progress: "Progress",
-  Dashboard: "Dashboard",
-};
-
-function buildBreadcrumbsFromState(state, parents = []) {
-  if (!state || !state.routes) return [];
-  const results = [];
-  const isStack = state.type === "stack";
-  const lastIndex = state.index ?? state.routes.length - 1;
-  const slice = isStack
-    ? state.routes.slice(0, lastIndex + 1)
-    : [state.routes[lastIndex]];
-
-  for (const route of slice) {
-    const label =
-      FRIENDLY_TITLES[route.name] ||
-      (route.params && route.params.title) ||
-      route.name;
-
-    results.push({
-      name: route.name,
-      label,
-      params: route.params,
-      parents: parents.map((p) => p.name),
-    });
-
-    if (route.state) {
-      results.push(
-        ...buildBreadcrumbsFromState(route.state, [...parents, route])
-      );
-    }
-  }
-  return results;
-}
-
-/* ================= Root wrapper with SafeAreaProvider ================= */
+/* ================= Root wrapper ================= */
 export default function App() {
   return (
     <SafeAreaProvider>
       <PaperProvider theme={paperTheme}>
+        <StatusBar
+          barStyle="light-content"
+          translucent
+          backgroundColor="transparent"
+        />
         <RootApp />
       </PaperProvider>
-      <ToastHost />
     </SafeAreaProvider>
+  );
+}
+
+/* ---------- Animated, Academic Loading (safe) ---------- */
+function AcademicLoading({
+  title = "Welcome to EduLink",
+  subtitle = "Preparing your learning space",
+}) {
+  const float = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  const marquee = useRef(new Animated.Value(-120)).current;
+
+  useEffect(() => {
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(float, {
+          toValue: 0,
+          duration: 1400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.06,
+          duration: 800,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const marqueeLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(marquee, {
+          toValue: 220,
+          duration: 1300,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(marquee, {
+          toValue: -120,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    floatLoop.start();
+    pulseLoop.start();
+    marqueeLoop.start();
+    return () => {
+      floatLoop.stop();
+      pulseLoop.stop();
+      marqueeLoop.stop();
+    };
+  }, [float, pulse, marquee]);
+
+  const translateY = float.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -8],
+  });
+
+  return (
+    <View style={styles.loadingContainer}>
+      <Animated.View
+        style={[styles.loadingCard, { transform: [{ translateY }] }]}
+        accessibilityRole="header"
+      >
+        <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <View style={styles.logoCircle}>
+            <Ionicons
+              name="school-outline"
+              size={38}
+              color={EDU_COLORS.primary}
+            />
+          </View>
+        </Animated.View>
+
+        <Text style={styles.loadingTitle}>{title}</Text>
+        <LoadingSubtitle text={subtitle} />
+
+        <View
+          style={styles.progressTrack}
+          accessible
+          accessibilityLabel="Loading progress"
+        >
+          <Animated.View
+            style={[
+              styles.progressBar,
+              { transform: [{ translateX: marquee }] },
+            ]}
+          />
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+function LoadingSubtitle({ text }) {
+  const dots = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dots, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(dots, {
+          toValue: 2,
+          duration: 500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(dots, {
+          toValue: 3,
+          duration: 500,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [dots]);
+
+  const count = Math.round(dots.__getValue?.() ?? 0) % 4;
+  return <Text style={styles.loadingSubtitle}>{text + ".".repeat(count)}</Text>;
+}
+
+function Hint({ icon, label }) {
+  return (
+    <View style={styles.hintItem}>
+      <Ionicons name={icon} size={16} color="rgba(0,0,0,0.66)" />
+      <Text style={styles.hintText}>{label}</Text>
+    </View>
   );
 }
 
@@ -217,66 +296,60 @@ function RootApp() {
   const [user, setUser] = useState(undefined);
   const [role, setRole] = useState(null);
   const [loadingRole, setLoadingRole] = useState(false);
+
   const navigationRef = useNavigationContainerRef();
-  const [breadcrumbs, setBreadcrumbs] = useState([]);
   const [topRouteName, setTopRouteName] = useState("");
+  const insets = useSafeAreaInsets();
 
   const isAuthRoute = topRouteName === "Login" || topRouteName === "Register";
+  const isLanding = topRouteName === "Landing";
 
-  // Transparent navigation theme so the global gradient shows everywhere
-  const NAV_THEME = {
-    ...NavDefaultTheme,
-    colors: {
-      ...NavDefaultTheme.colors,
-      background: "transparent",
-      card: "transparent",
-      border: "transparent",
-      text: NavDefaultTheme.colors.text,
-      primary: NavDefaultTheme.colors.primary,
-    },
-  };
+  const NAV_THEME = useMemo(
+    () => ({
+      ...NavDefaultTheme,
+      colors: {
+        ...NavDefaultTheme.colors,
+        background: "transparent",
+        card: "transparent",
+        border: "transparent",
+        text: NavDefaultTheme.colors.text,
+        primary: NavDefaultTheme.colors.primary,
+      },
+    }),
+    []
+  );
 
-  const checkRolePromotion = async (userData, userId) => {
-    if (userData.role === "student" && userData.points >= 200) {
-      await updateDoc(doc(db, "users", userId), { role: "tutor" });
-      return "tutor";
-    }
-    return userData.role;
-  };
-
-  const handleStateChange = () => {
-    const state = navigationRef.getRootState();
-    const full = buildBreadcrumbsFromState(state);
-    setBreadcrumbs(full);
-    const current = navigationRef.getCurrentRoute();
-    setTopRouteName(current?.name ?? "");
-  };
-
-  const onCrumbPress = (idx) => {
-    navigateToBreadcrumb(navigationRef, breadcrumbs, idx);
-  };
+  const toastTopOffset = useMemo(() => {
+    const isClassroom = topRouteName === "ClassroomDetail";
+    return isClassroom ? 0 : (insets?.top || 0) + NAVBAR_HEIGHT + 8;
+  }, [topRouteName, insets]);
 
   useEffect(() => {
     const sub = onAuthStateChanged(auth, async (u) => {
       setUser(u ?? null);
+
       if (u) {
         setLoadingRole(true);
+        let nextRole = "student";
         try {
           const snap = await getDoc(doc(db, "users", u.uid));
           if (snap.exists()) {
-            const userData = snap.data();
-            const currentRole = await checkRolePromotion(userData, u.uid);
-            setRole(
-              ["student", "tutor", "teacher", "parent"].includes(currentRole)
-                ? currentRole
-                : "student"
-            );
-          } else {
-            setRole("student");
+            const data = snap.data();
+            if (data.role === "student" && data.points >= 200) {
+              await updateDoc(doc(db, "users", u.uid), { role: "tutor" });
+              nextRole = "tutor";
+            } else {
+              nextRole = ["student", "tutor", "teacher", "parent"].includes(
+                data.role
+              )
+                ? data.role
+                : "student";
+            }
           }
-        } catch (e) {
-          setRole("student");
+        } catch {
+          nextRole = "student";
         } finally {
+          setRole(nextRole);
           setLoadingRole(false);
         }
       } else {
@@ -284,34 +357,35 @@ function RootApp() {
       }
     });
     return sub;
-  }, []);
+  }, [navigationRef]);
+
+  const handleStateChange = () => {
+    const current = navigationRef.getCurrentRoute();
+    setTopRouteName(current?.name ?? "");
+  };
 
   if (user === undefined) return null;
 
-  const AuthStack = () => (
-    <Stack.Navigator screenOptions={stackCommon}>
+  const UnauthedStack = () => (
+    <Stack.Navigator screenOptions={stackCommon} initialRouteName="Landing">
+      <Stack.Screen name="Landing" component={LandingScreen} />
       <Stack.Screen
         name="Login"
         component={LoginScreen}
-        initialParams={{ msg: null }}
         options={{ headerBackVisible: false, gestureEnabled: false }}
       />
-      <Stack.Screen
-        name="Register"
-        component={RegisterScreen}
-        options={{ headerBackVisible: true, gestureEnabled: true }}
-      />
+      <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ParentDashboard" component={ParentDashboard} />
     </Stack.Navigator>
   );
 
-  const AppStack = () => (
+  const AuthedStack = () => (
     <Stack.Navigator screenOptions={stackCommon}>
       <Stack.Screen
         name="Main"
         component={MainTabs}
         initialParams={{ role }}
-        key={`main-${role}`}
+        key={`main-${role || "student"}`}
       />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
@@ -322,42 +396,23 @@ function RootApp() {
 
   return (
     <SafeAreaView style={styles.safeWrap} edges={["top", "left", "right"]}>
-      {isAuthRoute ? (
-        // Full-screen gradient for Login/Register
-        <LinearGradient
-          colors={APP_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          locations={[0, 0.17, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      ) : (
-        // App gradient for the rest of the app
-        <LinearGradient
-          colors={APP_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          locations={[0, 0.17, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      )}
-
-      {/* Fixed top navbar */}
-      {/* Fixed top navbar */}
-      <TopNavbar
-        currentRouteName={topRouteName}
-        onBack={() => navigationRef.current?.goBack?.()}
-        navigationRef={navigationRef} // ✅ provide ref so navbar can navigate
+      <LinearGradient
+        colors={APP_GRADIENT}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        locations={[0, 0.17, 1]}
+        style={StyleSheet.absoluteFill}
       />
 
-      {/* Spacer exactly equal to navbar */}
-      <View style={{ height: NAVBAR_HEIGHT }} />
-
-      {/* Breadcrumbs (non-auth only) */}
-      {user && !isAuthRoute && (
-        <View style={styles.breadcrumbsWrap}>
-          {/* ...existing breadcrumb code... */}
-        </View>
+      {!isLanding && !isAuthRoute && (
+        <>
+          <TopNavbar
+            currentRouteName={topRouteName}
+            onBack={() => navigationRef.current?.goBack?.()}
+            navigationRef={navigationRef}
+          />
+          <View style={{ height: NAVBAR_HEIGHT }} />
+        </>
       )}
 
       <NavigationContainer
@@ -368,63 +423,31 @@ function RootApp() {
       >
         {user ? (
           loadingRole ? (
-            <LoadingPage
+            <AcademicLoading
               title="Welcome to EduLink"
-              subtitle="Preparing your learning space …"
-              imageSource={require("./assets/app-logo.png")}
+              subtitle="Preparing your learning space"
             />
           ) : (
-            <AppStack />
+            <AuthedStack />
           )
         ) : (
-          <AuthStack />
+          <UnauthedStack />
         )}
       </NavigationContainer>
 
-      {/* Bottom nav only when signed in & not on auth routes */}
-      {user && !loadingRole && !isAuthRoute && (
+      {user && !loadingRole && !isLanding && !isAuthRoute && (
         <BottomNavbar
           role={role || "student"}
           navigationRef={navigationRef}
           activeTab={topRouteName}
         />
       )}
+
+      <Toast
+        topOffset={toastTopOffset}
+        style={{ zIndex: 9999, elevation: 9999 }}
+      />
     </SafeAreaView>
-  );
-}
-
-function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
-  const crumb = crumbs?.[targetIndex];
-  if (!crumb || !navigationRef.current) return;
-
-  if (!crumb.parents || crumb.parents.length === 0) {
-    navigationRef.current.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: crumb.name, params: crumb.params }],
-      })
-    );
-    return;
-  }
-
-  const top = crumb.parents[0];
-  let params = {};
-  let cursor = params;
-
-  for (let i = 1; i < crumb.parents.length; i++) {
-    cursor.screen = crumb.parents[i];
-    cursor.params = {};
-    cursor = cursor.params;
-  }
-
-  cursor.screen = crumb.name;
-  cursor.params = crumb.params ?? {};
-
-  navigationRef.current.dispatch(
-    CommonActions.reset({
-      index: 0,
-      routes: [{ name: top, params }],
-    })
   );
 }
 
@@ -432,38 +455,78 @@ function navigateToBreadcrumb(navigationRef, crumbs, targetIndex) {
 const styles = StyleSheet.create({
   safeWrap: { flex: 1, backgroundColor: "transparent" },
 
-  breadcrumbsWrap: {
-    paddingHorizontal: 22,
-    marginTop: -64,
-    marginBottom: 16,
-  },
-  breadcrumbLine: {
-    fontWeight: "900",
-    letterSpacing: 0.2,
-    width: "100%",
-    flexShrink: 1,
-    fontSize: 16,
-    color: "rgba(255,255,255,0.82)",
-  },
-  breadcrumbLink: {
-    color: "black",
-    textDecorationLine: "none",
-  },
-  breadcrumbSep: {
-    color: "black",
-  },
-
+  // Loading UI — centered both axes, high-visibility, modern card
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "transparent",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
-  loadingText: {
-    marginTop: 16,
-    color: "black",
-    fontWeight: "600",
+  loadingCard: {
+    width: "92%",
+    maxWidth: 520,
+    borderRadius: 20,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.85)",
+    alignItems: "center",
+    gap: 10,
+  },
+  logoCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 40,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: EDU_COLORS?.primary ?? "#0A8CA0",
+  },
+  loadingTitle: {
+    marginTop: 8,
     fontSize: 20,
+    fontWeight: "800",
+    color: "rgba(0,0,0,0.9)",
     textAlign: "center",
+    letterSpacing: 0.2,
   },
+  loadingSubtitle: {
+    fontSize: 14,
+    color: "rgba(0,0,0,0.66)",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  progressBar: {
+    width: 120,
+    height: "100%",
+    borderRadius: 6,
+    backgroundColor: EDU_COLORS?.primary ?? "#0A8CA0",
+  },
+  hintRow: {
+    flexDirection: "row",
+    marginTop: 12,
+    gap: 16,
+  },
+  hintItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.75)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  hintText: { fontSize: 12, color: "rgba(0,0,0,0.66)", fontWeight: "600" },
 });

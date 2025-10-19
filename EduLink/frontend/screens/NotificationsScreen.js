@@ -693,26 +693,23 @@ const styles = StyleSheet.create({
 
   /* ---------- Loading card ---------- */
   loadingCenterWrap: {
+    flex: 1,
     width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
   },
   loadingCard: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 480,
     borderRadius: 16,
     paddingVertical: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
   },
   loadingTitle: {
     marginTop: 8,

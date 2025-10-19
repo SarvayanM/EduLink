@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import { EDU_COLORS, Surfaces } from "../theme/colors";
 
-
 /**
  * LoadingPage
  * Props:

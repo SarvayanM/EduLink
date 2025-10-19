@@ -829,14 +829,16 @@ const styles = StyleSheet.create({
 
   /* ---- Generic tileCard (filters/empty/loading) ---- */
   tileCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    width: "100%",
+    maxWidth: 480,
+    paddingVertical: 24,
+    paddingHorizontal: 24,
     borderRadius: 16,
     backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: CARD_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
     ...Platform.select({
       ios: {
         shadowOpacity: 0.08,
@@ -1098,15 +1100,14 @@ const styles = StyleSheet.create({
   iconBtnText: { color: "#FFFFFF", fontSize: 20, fontWeight: "700" },
   modalImage: { width: "100%", height: "100%", borderRadius: 8 },
 
-  /* ---- Loading ---- */
+  /* ---- Loading (centered on screen - full width) ---- */
   loadingCenterWrap: {
+    flex: 1,
     width: "100%",
-    minHeight: 220,
-    paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
+    marginTop: 20,
   },
   progressTrack: {
     width: "100%",

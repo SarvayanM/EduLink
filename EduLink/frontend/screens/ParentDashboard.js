@@ -51,6 +51,59 @@ const BlurCard = ({ children, style, intensity = 28, tint = "light" }) => (
   </BlurView>
 );
 
+/* ---------- Compact, tile-like loading card (matching QuestionFeedScreen) ---------- */
+const LoadingCard = ({
+  title = "Loading Dashboard",
+  subtitle = "Fetching your child's progress…",
+}) => {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [trackW, setTrackW] = React.useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+        easing: Easing.inOut(Easing.cubic),
+      })
+    );
+    loop.start();
+    return () => {
+      anim.stopAnimation(() => anim.setValue(0));
+    };
+  }, [anim]);
+
+  const translateX =
+    trackW > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-80, Math.max(trackW - 80, 0)],
+        })
+      : 0;
+
+  return (
+    <View style={styles.loadingCenterWrap}>
+      <View style={styles.tileCard}>
+        <Text style={styles.tileTitle}>⏳ {title}</Text>
+        <Text style={styles.tileSubtitle}>{subtitle}</Text>
+
+        <View
+          style={styles.progressTrack}
+          onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[
+              styles.progressBar,
+              trackW ? { transform: [{ translateX }] } : null,
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+};
+
 /* Subtle fade+slide animation hook */
 function useFadeIn(delay = 0) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -476,12 +529,7 @@ export default function ParentDashboard({ navigation }) {
   };
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={EDU_COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Child Progress...</Text>
-      </SafeAreaView>
-    );
+    return <LoadingCard />;
   }
 
   const toggle = (key) =>
@@ -1004,14 +1052,56 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  /* Loading */
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: {
+  /* Loading (centered on screen - full width) */
+  loadingCenterWrap: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  tileCard: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tileTitle: {
     fontSize: 18,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginTop: 16,
+    fontWeight: "700",
+    color: EDU_COLORS?.textPrimary || "#0B1220",
+    marginBottom: 6,
     textAlign: "center",
+  },
+  tileSubtitle: {
+    fontSize: 14,
+    color: EDU_COLORS?.textSecondary || "#64748B",
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 14,
+  },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: Surfaces?.border || "#E2E8F0",
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  progressBar: {
+    width: 80,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: EDU_COLORS?.primary || "#0EA5E9",
   },
 
   /* Sections */

@@ -12,9 +12,9 @@ import {
 import Toast from "react-native-toast-message";
 import { CommonActions } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
-import { signOut } from "firebase/auth";
+// import { signOut } from "firebase/auth"; // removed (no logout in bottom bar)
 
-import { auth } from "../services/firebaseAuth";
+// import { auth } from "../services/firebaseAuth"; // removed (no logout)
 import { EDU_COLORS, Surfaces, Buttons } from "../theme/colors";
 
 /* ---------- Constants ---------- */
@@ -48,8 +48,6 @@ function getIconForLabel(label) {
       return "📝";
     case "Progress":
       return "📈";
-    case "Logout":
-      return "🚪";
     default:
       return "⭐️";
   }
@@ -61,7 +59,6 @@ function getNavItemsByRole(role) {
     return [
       { label: "Dashboard", kind: "tab", tab: "Dashboard" },
       { label: "Notifications", kind: "tab", tab: "Notifications" },
-      { label: "Logout", kind: "logout", destructive: true },
     ];
   }
   if (role === "teacher") {
@@ -69,7 +66,6 @@ function getNavItemsByRole(role) {
       { label: "Home", kind: "tab", tab: "Home" },
       { label: "Q&A", kind: "tab", tab: "Q&A" },
       { label: "Resources", kind: "tab", tab: "Resources" },
-      { label: "Logout", kind: "logout", destructive: true },
     ];
   }
   // student / tutor
@@ -79,7 +75,6 @@ function getNavItemsByRole(role) {
     { label: "Resources", kind: "tab", tab: "Resources" },
     { label: "Study", kind: "tab", tab: "StudyPlanner" },
     { label: "Progress", kind: "tab", tab: "Progress" },
-    { label: "Logout", kind: "logout", destructive: true },
   ];
 }
 
@@ -90,54 +85,6 @@ export default function BottomNavbar({
   activeTab,
 }) {
   const items = useMemo(() => getNavItemsByRole(role), [role]);
-
-  // toast-style confirmation state
-  const [confirmVisible, setConfirmVisible] = useState(false);
-  const confirmTimer = useRef(null);
-  const anim = useRef(new Animated.Value(0)).current;
-
-  const showConfirm = () => {
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    setConfirmVisible(true);
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-    // auto-hide in 6s
-    confirmTimer.current = setTimeout(() => hideConfirm(), 6000);
-  };
-
-  const hideConfirm = () => {
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: 180,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setConfirmVisible(false);
-    });
-    if (confirmTimer.current) {
-      clearTimeout(confirmTimer.current);
-      confirmTimer.current = null;
-    }
-  };
-
-  useEffect(
-    () => () => confirmTimer.current && clearTimeout(confirmTimer.current),
-    []
-  );
-
-  const handleConfirmLogout = async () => {
-    hideConfirm();
-    try {
-      await signOut(auth);
-      showToast("success", "Logged out", "You’ve been signed out.");
-    } catch {
-      showToast("error", "Logout failed", "Please try again.");
-    }
-  };
 
   const goToTab = (tab) => {
     try {
@@ -180,7 +127,6 @@ export default function BottomNavbar({
               onPress={() => {
                 if (it.kind === "tab") return goToTab(it.tab);
                 if (it.kind === "screen") return goToScreen(it.screen);
-                if (it.kind === "logout") return showConfirm(); // 🔔 toast-style prompt
               }}
               style={({ pressed }) => [
                 styles.item,
@@ -207,54 +153,7 @@ export default function BottomNavbar({
         })}
       </BlurView>
 
-      {/* Toast-style confirmation (overlays above bar) */}
-      {confirmVisible && (
-        <Animated.View
-          pointerEvents="box-none"
-          style={[
-            styles.confirmWrap,
-            {
-              opacity: anim,
-              transform: [
-                {
-                  translateY: anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [20, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <BlurView intensity={28} tint="light" style={styles.confirmCard}>
-            <Text style={styles.confirmText}>Log out of your account?</Text>
-            <View style={styles.confirmRow}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={hideConfirm}
-                style={({ pressed }) => [
-                  styles.confirmBtn,
-                  styles.confirmCancel,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.confirmCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={handleConfirmLogout}
-                style={({ pressed }) => [
-                  styles.confirmBtn,
-                  styles.confirmLogout,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.confirmLogoutText}>Log out</Text>
-              </Pressable>
-            </View>
-          </BlurView>
-        </Animated.View>
-      )}
+      {/* Logout confirmation UI removed as logout option is not present in bottom bar */}
     </>
   );
 }
